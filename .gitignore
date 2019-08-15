@@ -1,0 +1,13 @@
+.DS_Store
+*.png
+*.numbers
+*.pyc
+.idea/*
+venv/*
+login.txt
+chromedriver
+key.txt
+db_structure/
+*.crx
+All_Leagues_8teams.txt
+*.ipynb_checkpoints
