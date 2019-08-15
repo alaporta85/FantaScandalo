@@ -1,13 +1,8 @@
-.DS_Store
-*.png
-*.numbers
-*.pyc
-.idea/*
-venv/*
-login.txt
-chromedriver
-key.txt
-db_structure/
-*.crx
-All_Leagues_8teams.txt
-*.ipynb_checkpoints
+# ignore everything
+*
+
+# don't ignore directories
+!*/
+
+# and don't ignore files ending with ".py"
+!*.py
