@@ -4,5 +4,6 @@
 # don't ignore directories
 !*/
 
-# and don't ignore files ending with ".py"
+# and don't ignore files ending with ".py" and ".db"
 !*.py
+!*.db
