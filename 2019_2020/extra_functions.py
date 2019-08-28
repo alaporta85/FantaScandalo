@@ -4,7 +4,7 @@ import string
 import db_functions as dbf
 from itertools import combinations, zip_longest
 
-ALL_LEAGUES = ('/Users/andrea/Desktop/Cartelle/Bots/FantaScandaloBot/'
+ALL_LEAGUES = ('/Users/andrea/Desktop/Cartelle/FantaScandalo/'
                'All_Leagues_8teams.txt')
 
 

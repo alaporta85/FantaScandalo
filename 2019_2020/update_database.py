@@ -3,7 +3,7 @@ import time
 import db_functions as dbf
 import pandas as pd
 from collections import defaultdict
-from selenium.common.exceptions import TimeoutException
+from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
@@ -82,7 +82,7 @@ def last_day_played():
 	last_day = dbf.db_select(table='absolute_points', columns=['*'])[0][1:]
 
 	try:
-		return last_day.index(None) - 1
+		return last_day.index(None)
 	except ValueError:
 		# Updating after the last day of the league will give a ValueError
 		return len(last_day)
@@ -104,7 +104,7 @@ def open_excel_file(filename, data_to_scrape):
 			try:
 
 				fantagazzetta = pd.read_excel(filename,
-				                              sheet_name='Fantagazzetta',
+				                              sheet_name='Fantacalcio',
 				                              header=4)
 				statistico = pd.read_excel(filename,
 				                           sheet_name='Statistico',
@@ -191,6 +191,11 @@ def scrape_lineups_schemes_points():
 		if day != real_day:
 			break
 
+		missing_lineups = len(brow.find_elements_by_xpath(
+				'.//div[contains(@class, "hidden-formation")]'))
+		if missing_lineups:
+			continue
+
 		# Find all matches
 		matches = brow.find_elements_by_xpath(
 				'.//div[contains(@class, "match-details calculated")]')
@@ -221,17 +226,43 @@ def scrape_lineups_schemes_points():
 				scheme = scheme.text.split('\n')[0]
 				team = team.text
 
+				captain = None
+				vice = None
 				complete_lineup = []
-				for player in table1.find_elements_by_xpath(
-						'.//span[@class="player-name"]'):
-					scroll_to_element(brow, 'false', player)
-					complete_lineup.append(player.text)
-				for player in table2.find_elements_by_xpath(
-						'.//span[@class="player-name"]'):
-					scroll_to_element(brow, 'false', player)
-					complete_lineup.append(player.text)
 
+				players = table1.find_elements_by_xpath(
+						'.//tr[contains(@class, "player-list-item")]')
+				players += table2.find_elements_by_xpath(
+						'.//tr[contains(@class, "player-list-item")]')[:-1]
+				for player in players:
+					scroll_to_element(brow, 'false', player)
+					name = player.find_element_by_xpath(
+						'.//span[@class="player-name ellipsis"]').text
+					complete_lineup.append(name)
+
+					try:
+						player.find_element_by_xpath(
+								'.//li[@data-original-title="Capitano"]')
+						captain = name
+					except NoSuchElementException:
+						pass
+
+					try:
+						player.find_element_by_xpath(
+								'.//li[@data-original-title="Vice capitano"]')
+						vice = name
+					except NoSuchElementException:
+						pass
+
+				captains = f'{captain}, {vice}'
 				complete_lineup = ', '.join(complete_lineup)
+
+				dbf.db_update(
+						table='captains',
+						columns=[f'day_{day}'],
+						values=[captains.upper()],
+						where=f'team_name="{team}"')
+
 				dbf.db_update(
 						table='lineups',
 						columns=[f'day_{day}'],
@@ -269,7 +300,7 @@ def scrape_allplayers_fantateam(brow):
 	days_played = last_day_played()
 
 	# Go the webpage
-	brow.get('https://leghe.fantagazzetta.com/fantascandalo/rose')
+	brow.get('https://leghe.fantacalcio.it/fantascandalo/rose')
 
 	# Wait for this element to be visible
 	check = './/h4[@class="has-select clearfix public-heading"]'
@@ -325,8 +356,10 @@ def scrape_roles_and_players_serie_a(brow):
 	already_in_db = dbf.db_select(table='roles', columns=['name'])
 
 	# Download excel file with the data
-	url = 'https://www.fantagazzetta.com/quotazioni-fantacalcio/mantra'
+	url = 'https://www.fantacalcio.it/quotazioni-fantacalcio/mantra'
 	brow.get(url)
+	close_popup(brow)
+	time.sleep(3)
 	button = './/button[@id="toexcel"]'
 	wait_visible(brow, WAIT, button)
 	brow.find_element_by_xpath(button).click()

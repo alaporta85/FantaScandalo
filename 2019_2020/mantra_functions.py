@@ -83,13 +83,13 @@ def check_when_0_subst(day, fantateam, players_in_field):
 	return malus, scheme
 
 
-def convert_wings(scheme, roles, mode):
+def convert_t(scheme, roles, mode):
 
 	"""
-	Convert wings (W) into W1 or W2 according to the module used or viceversa
-	(W1, W2 into W) depending on the 'mode' parameter.
+	Convert T into T1 or T2 according to the module used or viceversa
+	(T1, T2 into T) depending on the 'mode' parameter.
 
-	Wings have special rules for substitutions depending on the module used.
+	T has special rules for substitutions depending on the module used.
 	Mode will be 'forward' at the beginning when looking for the valid lineup
 	and 'back' when found.
 
@@ -102,17 +102,17 @@ def convert_wings(scheme, roles, mode):
 	"""
 
 	if mode == 'back':
-		roles = ['W' if (el == 'W1' or el == 'W1*' or
-		                 el == 'W2' or el == 'W2*') else el for el in roles]
+		roles = ['T' if (el == 'T1' or el == 'T1*' or
+		                 el == 'T2' or el == 'T2*') else el for el in roles]
 		return roles
 
 	elif mode == 'forward':
-		special_group = ['3-5-2', '4-4-2', '4-4-1-1']
+		special_group = ['4-1-4-1']
 
 		if scheme in special_group:
-			return ['W2' if el == 'W' else el for el in roles]
+			return ['T2' if el == 'T' else el for el in roles]
 		else:
-			return ['W1' if el == 'W' else el for el in roles]
+			return ['T1' if el == 'T' else el for el in roles]
 
 
 def create_players_candidates(list_of_tuples, players_needed):
@@ -505,8 +505,8 @@ def optimal(scheme, field_with_roles, bench_with_roles,
 		for lineup in players_candidates:
 
 			lineup_names = [el[0] for el in lineup]
-			lineup_roles = convert_wings(scheme, [el[1] for el in lineup],
-			                             mode='forward')
+			lineup_roles = convert_t(scheme, [el[1] for el in lineup],
+			                         mode='forward')
 
 			# Filter the options
 			filtered_sch_cand = filter_schemes_candidates(lineup_roles,
@@ -514,7 +514,7 @@ def optimal(scheme, field_with_roles, bench_with_roles,
 			for candidate in filtered_sch_cand:
 
 				# Transform wings
-				candidate = convert_wings(scheme, candidate, mode='forward')
+				candidate = convert_t(scheme, candidate, mode='forward')
 
 				# Roles which are not covered by this lineup combination
 				uncovered = Counter(candidate) - Counter(lineup_roles)
@@ -523,8 +523,8 @@ def optimal(scheme, field_with_roles, bench_with_roles,
 				# If all roles are covered, solution is found
 				if not uncovered:
 					# Transform wings back
-					lineup_roles = convert_wings(scheme, lineup_roles,
-					                             'back')
+					lineup_roles = convert_t(scheme, lineup_roles,
+					                         mode='back')
 					return list(zip(lineup_names, lineup_roles)), scheme
 
 	return None, None
@@ -601,14 +601,14 @@ def efficient(list_of_schemes, field_with_roles, bench_with_roles,
 			for lineup in players_candidates:
 
 				lineup_names = [el[0] for el in lineup]
-				lineup_roles = convert_wings(scheme, [el[1] for el in lineup],
-				                             mode='forward')
+				lineup_roles = convert_t(scheme, [el[1] for el in lineup],
+				                         mode='forward')
 				filtered_sch_cand = filter_schemes_candidates(lineup_roles,
 				                                              schemes_candidates)
 				for candidate in filtered_sch_cand:
 
 					# Transform wings
-					candidate = convert_wings(scheme, candidate, mode='forward')
+					candidate = convert_t(scheme, candidate, mode='forward')
 
 					# Roles which are not covered by this lineup combination
 					uncovered = Counter(candidate) - Counter(lineup_roles)
@@ -617,8 +617,8 @@ def efficient(list_of_schemes, field_with_roles, bench_with_roles,
 					# If all roles are covered, solution is found
 					if not uncovered:
 						# Transform wings back
-						lineup_roles = convert_wings(scheme, lineup_roles,
-						                             'back')
+						lineup_roles = convert_t(scheme, lineup_roles,
+						                         mode='back')
 						return list(zip(lineup_names, lineup_roles)), scheme
 
 	return None, None
@@ -676,14 +676,14 @@ def adapted(list_of_schemes, field_with_roles, bench_with_roles,
 			for lineup in players_candidates:
 
 				lineup_names = [el[0] for el in lineup]
-				lineup_roles = convert_wings(scheme, [el[1] for el in lineup],
-				                             mode='forward')
+				lineup_roles = convert_t(scheme, [el[1] for el in lineup],
+				                         mode='forward')
 				filtered_sch_cand = filter_schemes_candidates(lineup_roles,
 				                                              schemes_candidates)
 				for candidate in filtered_sch_cand:
 
 					# Transform wings
-					candidate = convert_wings(scheme, candidate, mode='forward')
+					candidate = convert_t(scheme, candidate, mode='forward')
 
 					# Roles which are not covered by this lineup combination
 					uncovered = Counter(candidate) - Counter(lineup_roles)
@@ -692,8 +692,8 @@ def adapted(list_of_schemes, field_with_roles, bench_with_roles,
 					# If all roles are covered, solution is found
 					if not uncovered:
 						# Transform wings back
-						lineup_roles = convert_wings(scheme, lineup_roles,
-						                             'back')
+						lineup_roles = convert_t(scheme, lineup_roles,
+						                         mode='back')
 						return list(zip(lineup_names, lineup_roles)), scheme
 					# else, check if it is possible to find an adapted
 					# solution

@@ -222,13 +222,15 @@ class Match(object):
 
 		captain1 = captain_points(self.captain, self.team1.name, lineup1,
 		                          self.day, self.captain_details)
-		rfactor1 = rfactor_points(self.rfactor, self.rfactor_details, votes1)
+		rfactor1 = rfactor_points(self.rfactor, self.rfactor_details, lineup1,
+		                          self.day, self.source)
 		self.team1.captain_bonus_malus_balance += captain1
 		self.team1.rfactor_bonus_malus_balance += rfactor1
 
 		captain2 = captain_points(self.captain, self.team2.name, lineup2,
 		                          self.day, self.captain_details)
-		rfactor2 = rfactor_points(self.rfactor, self.rfactor_details, votes2)
+		rfactor2 = rfactor_points(self.rfactor, self.rfactor_details, lineup2,
+		                          self.day, self.source)
 		self.team2.captain_bonus_malus_balance += captain2
 		self.team2.rfactor_bonus_malus_balance += rfactor2
 
@@ -892,10 +894,14 @@ def create_abs_points_dict(fteams, n_days):
 	abs_points = {tm: None for tm in fteams}
 
 	for tm in abs_points:
-		abs_points[tm] = dbf.db_select(
+		p = dbf.db_select(
 				table='absolute_points',
 				columns=[f'day_{day}' for day in range(1, n_days + 1)],
 				where=f'team_name="{tm}"')[0]
+		if type(p) == list:
+			abs_points[tm] = p
+		else:
+			abs_points[tm] = [p]
 
 	return abs_points
 
@@ -981,14 +987,16 @@ def captain_points(captain_true_false, fantateam_name, lineup,
 	return captain_details[vote]
 
 
-def rfactor_points(rfac_true_false, rfac_details, list_of_votes):
+def rfactor_points(rfac_true_false, rfac_details, lineup, day, source):
 
 	"""
 	Return the bonus/malus points associated with the R-factor.
 
 	:param rfac_true_false: bool
 	:param rfac_details: dict
-	:param list_of_votes: list
+	:param lineup: list
+	:param day: int
+	:param source: str
 
 	:return: float
 
@@ -997,6 +1005,7 @@ def rfactor_points(rfac_true_false, rfac_details, list_of_votes):
 	if not rfac_true_false:
 		return 0
 
+	list_of_votes = [players[i].vote(day, source) for i in lineup]
 	n_suff = sum([1 for vote in list_of_votes if vote >= 6])
 	return rfac_details[n_suff]
 
@@ -1017,10 +1026,10 @@ def optimal_number_iterations(fteams, days, leagues_options,
 players = set(dbf.db_select(table='votes', columns=['name']))
 fantateams = dbf.db_select(table='teams', columns=['team_name'])
 players = {pl: Player(pl) for pl in players}
-#
+
 # our_round = [dbf.db_select(table='round', columns=['day_{}'.format(i)]) for i
 #              in range(1, len(fantateams))]
-# DAYS = 35
+# DAYS = 1
 # lg = League(fteams=fantateams,
 #             a_round=our_round,
 #             n_days=DAYS,
@@ -1028,3 +1037,6 @@ players = {pl: Player(pl) for pl in players}
 #             captain=True,
 #             rfactor=True,
 #             source='alvin')
+#
+# lg.create_ranking()
+# lg.create_heatmap()
