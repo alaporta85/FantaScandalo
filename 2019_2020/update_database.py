@@ -194,11 +194,11 @@ def scrape_lineups_schemes_points():
 		missing_lineups = len(brow.find_elements_by_xpath(
 				'.//div[contains(@class, "hidden-formation")]'))
 		if missing_lineups:
-			continue
+			break
 
 		# Find all matches
 		matches = brow.find_elements_by_xpath(
-				'.//div[contains(@class, "match-details calculated")]')
+				'.//div[contains(@class, "match-details card calculated")]')
 		if not matches:
 			# If day it is not concluded it has a different attribute
 			matches = brow.find_elements_by_xpath(
@@ -208,6 +208,7 @@ def scrape_lineups_schemes_points():
 		# Iterate the matches and update database
 		for match in matches:
 			scroll_to_element(brow, 'false', match)
+			time.sleep(2)
 			teams = match.find_elements_by_xpath(
 					'.//h4[@class="media-heading ellipsis"]')
 			schemes = match.find_elements_by_xpath('.//h5')
@@ -223,7 +224,7 @@ def scrape_lineups_schemes_points():
 					teams, schemes, first11, reserves, points):
 
 				scroll_to_element(brow, 'false', team)
-				scheme = scheme.text.split('\n')[0]
+				# scheme = scheme.text.split('\n')[0]
 				team = team.text
 
 				captain = None
@@ -235,9 +236,11 @@ def scrape_lineups_schemes_points():
 				players += table2.find_elements_by_xpath(
 						'.//tr[contains(@class, "player-list-item")]')[:-1]
 				for player in players:
-					scroll_to_element(brow, 'false', player)
-					name = player.find_element_by_xpath(
-						'.//span[@class="player-name ellipsis"]').text
+					name = ''
+					while not name:
+						scroll_to_element(brow, 'false', player)
+						name = player.find_element_by_xpath(
+							'.//span[@class="player-name ellipsis"]').text
 					complete_lineup.append(name)
 
 					try:
@@ -269,13 +272,15 @@ def scrape_lineups_schemes_points():
 						values=[complete_lineup.upper()],
 						where=f'team_name="{team}"')
 
+				scroll_to_element(brow, 'false', scheme)
 				dbf.db_update(
 						table='schemes',
 						columns=[f'day_{day}'],
-						values=[scheme],
+						values=[scheme.text.split('\n')[0]],
 						where=f'team_name="{team}"')
 
 				if scrape_points:
+					scroll_to_element(brow, 'false', score)
 					dbf.db_update(
 							table='absolute_points',
 							columns=[f'day_{day}'],
@@ -313,12 +318,14 @@ def scrape_allplayers_fantateam(brow):
 
 	for shortlist in shortlists:
 
+		scroll_to_element(brow, 'false', shortlist)
+
 		# We will be appending players to this list
 		players = []
 
 		# Name of the fantateam
 		team = shortlist.find_element_by_xpath('.//h4')
-		scroll_to_element(brow, 'true', team)
+		scroll_to_element(brow, 'false', team)
 		time.sleep(3)
 		team = team.text
 
@@ -327,7 +334,7 @@ def scrape_allplayers_fantateam(brow):
 
 		for player in names:
 
-			scroll_to_element(brow, 'true', player)
+			scroll_to_element(brow, 'false', player)
 			name = player.text.upper()
 			players.append(name)
 

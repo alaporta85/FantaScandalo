@@ -237,13 +237,6 @@ class Match(object):
 		abs_points1 += captain1 + rfactor1
 		abs_points2 += captain2 + rfactor2
 
-		dbf.db_update(table='absolute_points', columns=[f'day_{self.day}'],
-		              values=[abs_points1],
-		              where=f'team_name="{self.team1.name}"')
-		dbf.db_update(table='absolute_points', columns=[f'day_{self.day}'],
-		              values=[abs_points2],
-		              where=f'team_name="{self.team2.name}"')
-
 		# From abs_points calculate corresponding goals
 		goals1 = int(max(abs_points1 - 60, 0) // 6)
 		goals2 = int(max(abs_points2 - 60, 0) // 6)
@@ -486,8 +479,8 @@ class League(object):
 
 		df.sort_values(by='N', ascending=False, inplace=True)
 		df.sort_values(by='V', ascending=False, inplace=True)
-		df.sort_values(by='G+', ascending=False, inplace=True)
 		df.sort_values(by='Dr', ascending=False, inplace=True)
+		df.sort_values(by='G+', ascending=False, inplace=True)
 		df = self.sort_by_classifica_avulsa(df)
 		df.sort_values(by='Tot Pt', ascending=False, inplace=True)
 		df.sort_values(by='Pt', ascending=False, inplace=True)
@@ -748,6 +741,10 @@ class Calendar(object):
 		self.avg = {team: 0 for team in fteams}
 
 		self.simulation(fteams, n_days, source)
+		for pos in self.archive:
+			for team in self.archive[pos]:
+				self.archive[pos][team].sort(key=lambda x: x[0], reverse=True)
+				self.archive[pos][team] = [rn for pt, rn in self.archive[pos][team]]
 		self.stats = self.stats(fteams)
 
 	def simulation(self, teams, n_days, source):
@@ -768,6 +765,7 @@ class Calendar(object):
 			fl = FastLeague(teams, self.abs_points, a_round, n_days, source)
 
 			names, points = fl.ranking
+
 			for pos, tm in enumerate(names, 1):
 				self.positions[pos][tm] += (1 / len(self.rounds))*100
 
@@ -777,7 +775,7 @@ class Calendar(object):
 				if points[pos - 1] < self.min_pt[tm]:
 					self.min_pt[tm] = points[pos - 1]
 
-				self.archive[pos][tm].append(a_round)
+				self.archive[pos][tm].append((points[pos - 1], a_round))
 
 				self.avg[tm] += points[pos - 1] / len(self.rounds)
 
@@ -868,7 +866,10 @@ class Calendar(object):
 			data = []
 			for i in range(0, 25, 4):
 				for j in range(i, i+4):
-					data.append(new_data[j])
+					try:
+						data.append(new_data[j])
+					except IndexError:
+						break
 				data.append([' '*(i//4), ' ', ' ', ' ', ' ', ' '])
 
 			df = pd.DataFrame(data, columns=['N', '1°', '2°', '3°', '4°', '5°'])
@@ -898,7 +899,7 @@ def create_abs_points_dict(fteams, n_days):
 				table='absolute_points',
 				columns=[f'day_{day}' for day in range(1, n_days + 1)],
 				where=f'team_name="{tm}"')[0]
-		if type(p) == list:
+		if type(p) == tuple:
 			abs_points[tm] = p
 		else:
 			abs_points[tm] = [p]
@@ -1029,7 +1030,7 @@ players = {pl: Player(pl) for pl in players}
 
 # our_round = [dbf.db_select(table='round', columns=['day_{}'.format(i)]) for i
 #              in range(1, len(fantateams))]
-# DAYS = 1
+# DAYS = 3
 # lg = League(fteams=fantateams,
 #             a_round=our_round,
 #             n_days=DAYS,
@@ -1039,4 +1040,8 @@ players = {pl: Player(pl) for pl in players}
 #             source='alvin')
 #
 # lg.create_ranking()
-# lg.create_heatmap()
+
+# n_leagues = 600
+#
+# cl = Calendar(fantateams, n_leagues, DAYS, 'alvin')
+# cl.specific_round('Fc Roxy', 1, DAYS)
