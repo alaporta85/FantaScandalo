@@ -12,6 +12,7 @@ from selenium import webdriver
 CHROME_PATH = os.getcwd() + '/chromedriver'
 WAIT = 60
 YEAR = '2019-20'
+BASE_URL = 'https://leghe.fantacalcio.it/fantascandalo/'
 
 
 def add_6politico(day):
@@ -37,11 +38,9 @@ def add_6politico(day):
 					table='all_players_serie_a',
 					columns=['day_{}'.format(day)],
 					where=f'team = "{team}"')[0]
-
 			shortlist = shortlist.split(', ')
-			for nm in shortlist:
 
-				# Update db
+			for nm in shortlist:
 				dbf.db_insert(
 						table='votes',
 						columns=['day', 'name', 'team', 'fg', 'alvin', 'italia',
@@ -165,8 +164,6 @@ def scrape_lineups_schemes_points():
 
 	brow = manage_adblock()
 
-	main_url = 'https://leghe.fantacalcio.it/fantascandalo/formazioni/{}'
-
 	# To know if it is the first iteration. If yes, close the popup
 	first2scrape = True
 
@@ -177,7 +174,7 @@ def scrape_lineups_schemes_points():
 	starting_day = last_day_played() + 1
 	for day in range(starting_day, 36):
 
-		brow.get(main_url.format(day))
+		brow.get(f'{BASE_URL}formazioni/{day}')
 
 		if first2scrape:
 			close_popup(brow)
@@ -207,8 +204,6 @@ def scrape_lineups_schemes_points():
 
 		# Iterate the matches and update database
 		for match in matches:
-			scroll_to_element(brow, 'false', match)
-			time.sleep(2)
 			teams = match.find_elements_by_xpath(
 					'.//h4[@class="media-heading ellipsis"]')
 			schemes = match.find_elements_by_xpath('.//h5')
@@ -223,9 +218,10 @@ def scrape_lineups_schemes_points():
 			for team, scheme, table1, table2, score in zip(
 					teams, schemes, first11, reserves, points):
 
-				scroll_to_element(brow, 'false', team)
-				# scheme = scheme.text.split('\n')[0]
-				team = team.text
+				team_name = ''
+				while not team_name:
+					scroll_to_element(brow, team)
+					team_name = team.text
 
 				captain = None
 				vice = None
@@ -238,7 +234,7 @@ def scrape_lineups_schemes_points():
 				for player in players:
 					name = ''
 					while not name:
-						scroll_to_element(brow, 'false', player)
+						scroll_to_element(brow, player)
 						name = player.find_element_by_xpath(
 							'.//span[@class="player-name ellipsis"]').text
 					complete_lineup.append(name)
@@ -264,28 +260,28 @@ def scrape_lineups_schemes_points():
 						table='captains',
 						columns=[f'day_{day}'],
 						values=[captains.upper()],
-						where=f'team_name="{team}"')
+						where=f'team_name="{team_name}"')
 
 				dbf.db_update(
 						table='lineups',
 						columns=[f'day_{day}'],
 						values=[complete_lineup.upper()],
-						where=f'team_name="{team}"')
+						where=f'team_name="{team_name}"')
 
-				scroll_to_element(brow, 'false', scheme)
+				scroll_to_element(brow, scheme)
 				dbf.db_update(
 						table='schemes',
 						columns=[f'day_{day}'],
 						values=[scheme.text.split('\n')[0]],
-						where=f'team_name="{team}"')
+						where=f'team_name="{team_name}"')
 
 				if scrape_points:
-					scroll_to_element(brow, 'false', score)
+					scroll_to_element(brow, score)
 					dbf.db_update(
 							table='absolute_points',
 							columns=[f'day_{day}'],
 							values=[float(score.text.split('\n')[0])],
-							where=f'team_name="{team}"')
+							where=f'team_name="{team_name}"')
 
 	return brow
 
@@ -305,7 +301,7 @@ def scrape_allplayers_fantateam(brow):
 	days_played = last_day_played()
 
 	# Go the webpage
-	brow.get('https://leghe.fantacalcio.it/fantascandalo/rose')
+	brow.get(f'{BASE_URL}rose')
 
 	# Wait for this element to be visible
 	check = './/h4[@class="has-select clearfix public-heading"]'
@@ -318,23 +314,18 @@ def scrape_allplayers_fantateam(brow):
 
 	for shortlist in shortlists:
 
-		scroll_to_element(brow, 'false', shortlist)
-
-		# We will be appending players to this list
-		players = []
-
 		# Name of the fantateam
-		team = shortlist.find_element_by_xpath('.//h4')
-		scroll_to_element(brow, 'false', team)
-		time.sleep(3)
-		team = team.text
+		team_name = ''
+		while not team_name:
+			team = shortlist.find_element_by_xpath('.//h4')
+			scroll_to_element(brow, team)
+			team_name = team.text
 
 		# Names containers
+		players = []
 		names = shortlist.find_elements_by_xpath('.//td[@data-key="name"]')
-
 		for player in names:
-
-			scroll_to_element(brow, 'false', player)
+			scroll_to_element(brow, player)
 			name = player.text.upper()
 			players.append(name)
 
@@ -343,9 +334,44 @@ def scrape_allplayers_fantateam(brow):
 				table='all_players',
 				columns=[f'day_{days_played}'],
 				values=[', '.join(players)],
-				where=f'team_name = "{team}"')
+				where=f'team_name = "{team_name}"')
 
 	return brow
+
+
+def scrape_classifica(brow):
+
+	"""
+	Scrape real data from website in order to check later how the algorithm is
+	working.
+
+	:param brow: selenium browser instance
+
+	"""
+
+	brow.get(f'{BASE_URL}classifica')
+	time.sleep(3)
+
+	dbf.empty_table(table='classifica')
+
+	positions = brow.find_elements_by_xpath(
+			'.//table/tbody/tr[contains(@data-logo, ".png")]')
+
+	columns = ['team', 'G', 'V', 'N', 'P', 'Gf', 'Gs', 'Dr', 'Pt', 'Tot']
+	for pos in positions:
+		team_data = []
+		scroll_to_element(brow, pos)
+		fields = pos.find_elements_by_xpath(
+			'.//td')[2:-2]
+
+		for field in fields:
+			team_data.append(field.text)
+
+		dbf.db_insert(table='classifica',
+		              columns=columns,
+		              values=team_data)
+
+	brow.close()
 
 
 def scrape_roles_and_players_serie_a(brow):
@@ -468,7 +494,7 @@ def scrape_votes(brow):
 					table='votes',
 					columns=['day', 'name', 'team', 'alvin', 'gf', 'gs',
 					         'rp', 'rs', 'rf', 'au', 'amm', 'esp', 'ass'],
-					values=[day, nm, team, alvin, gf, gs,
+					values=[day, nm.strip(), team, alvin, gf, gs,
 					        rp, rs, rf, au, amm, esp, ass+asf])
 
 		# Update 'fg' votes
@@ -479,26 +505,20 @@ def scrape_votes(brow):
 
 		add_6politico(day)
 
-	brow.close()
+	return brow
 
 
-def scroll_to_element(brow, true_false, element):
+def scroll_to_element(brow, element, position='{block: "center"}'):
 
 	"""
 	If the argument of 'scrollIntoView' is 'true' the command scrolls
 	the webpage positioning the element at the top of the window, if it
 	is 'false' the element will be positioned at the bottom.
-
-	:param brow:
-	:param true_false: str, 'true' or 'false'
-	:param element: HTML element
-
-	:return: Nothing
-
 	"""
 
-	brow.execute_script(f'return arguments[0].scrollIntoView({true_false});',
-	                    element)
+	brow.execute_script(
+			f'return arguments[0].scrollIntoView({position});',
+			element)
 
 
 def update_other_votes(day, column, dataset):
@@ -600,3 +620,4 @@ browser = scrape_lineups_schemes_points()
 browser = scrape_allplayers_fantateam(browser)
 scrape_roles_and_players_serie_a(browser)
 scrape_votes(browser)
+scrape_classifica(browser)

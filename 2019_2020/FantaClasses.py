@@ -476,6 +476,7 @@ class League(object):
 
 		cols = ['G', 'V', 'N', 'P', 'G+', 'G-', 'Dr', 'Pt', 'Tot Pt']
 		df = pd.DataFrame.from_dict(data, orient='index', columns=cols)
+		assert_df_is_correct(df, cols)
 
 		df.sort_values(by='N', ascending=False, inplace=True)
 		df.sort_values(by='V', ascending=False, inplace=True)
@@ -879,6 +880,28 @@ class Calendar(object):
 			return df.style.set_properties(**{'width': '50px'}), rn
 
 
+def assert_df_is_correct(dataframe, columns):
+
+	"""
+	Check if code is working correctly by comparing the result with the real
+	data in the database.
+
+	:param dataframe: Pandas DataFrame
+	:param columns: list
+
+	"""
+
+	classifica = dbf.db_select(table='classifica', columns=['*'])
+	classifica = {team[0]: team[1:] for team in classifica}
+	df = pd.DataFrame.from_dict(classifica, orient='index', columns=columns)
+
+	df.sort_index(inplace=True)
+	dataframe.sort_index(inplace=True)
+
+	if not dataframe.equals(df):
+		raise ValueError('La classifica non coincide con quella reale')
+
+
 def create_abs_points_dict(fteams, n_days):
 
 	"""
@@ -1030,7 +1053,7 @@ players = {pl: Player(pl) for pl in players}
 
 # our_round = [dbf.db_select(table='round', columns=['day_{}'.format(i)]) for i
 #              in range(1, len(fantateams))]
-# DAYS = 3
+# DAYS = 5
 # lg = League(fteams=fantateams,
 #             a_round=our_round,
 #             n_days=DAYS,
