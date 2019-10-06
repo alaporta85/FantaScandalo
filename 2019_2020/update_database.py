@@ -10,7 +10,7 @@ from selenium.webdriver.common.by import By
 from selenium import webdriver
 
 CHROME_PATH = os.getcwd() + '/chromedriver'
-WAIT = 60
+WAIT = 10
 YEAR = '2019-20'
 BASE_URL = 'https://leghe.fantacalcio.it/fantascandalo/'
 
@@ -18,7 +18,7 @@ BASE_URL = 'https://leghe.fantacalcio.it/fantascandalo/'
 def add_6politico(day):
 
 	"""
-	Assign 6 to each player of the teams which have not played.
+	Assign 6 to each player of the matches which have not been played.
 
 	:param day: int
 
@@ -29,25 +29,26 @@ def add_6politico(day):
 			columns=['team'],
 			where=f'day = {day}'))
 
-	if len(teams_in_day) != 20:
-		all_teams = set(dbf.db_select(table='votes', columns=['team']))
-		missing = all_teams - teams_in_day
+	if len(teams_in_day) == 20:
+		return
 
-		for team in missing:
-			shortlist = dbf.db_select(
-					table='all_players_serie_a',
-					columns=['day_{}'.format(day)],
-					where=f'team = "{team}"')[0]
-			shortlist = shortlist.split(', ')
+	all_teams = set(dbf.db_select(table='votes', columns=['team']))
+	missing = all_teams - teams_in_day
 
-			for nm in shortlist:
-				dbf.db_insert(
-						table='votes',
-						columns=['day', 'name', 'team', 'fg', 'alvin', 'italia',
-						         'gf', 'gs', 'rp', 'rs', 'rf', 'au', 'amm',
-						         'esp', 'ass'],
-						values=[day, nm, team, 6, 6, 6, 0, 0,
-						        0, 0, 0, 0, 0, 0, 0])
+	for team in missing:
+		shortlist = dbf.db_select(
+				table='all_players_serie_a',
+				columns=['day_{}'.format(day)],
+				where=f'team = "{team}"')[0]
+		shortlist = shortlist.split(', ')
+
+		for nm in shortlist:
+			dbf.db_insert(
+					table='votes',
+					columns=['day', 'name', 'team', 'fg', 'alvin', 'italia',
+					         'gf', 'gs', 'rp', 'rs', 'rf', 'au', 'amm',
+					         'esp', 'ass'],
+					values=[day, nm, team, 6, 6, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0])
 
 
 def close_popup(brow):
@@ -78,13 +79,14 @@ def last_day_played():
 
 	"""
 
-	last_day = dbf.db_select(table='absolute_points', columns=['*'])[0][1:]
+	list_of_abs_points = dbf.db_select(table='absolute_points',
+	                                   columns=['*'])[0][1:]
 
 	try:
-		return last_day.index(None)
+		return list_of_abs_points.index(None)
 	except ValueError:
 		# Updating after the last day of the league will give a ValueError
-		return len(last_day)
+		return len(list_of_abs_points)
 
 
 def open_excel_file(filename, data_to_scrape):
@@ -101,7 +103,6 @@ def open_excel_file(filename, data_to_scrape):
 
 		if data_to_scrape == 'votes':
 			try:
-
 				fantagazzetta = pd.read_excel(filename,
 				                              sheet_name='Fantacalcio',
 				                              header=4)
@@ -111,20 +112,15 @@ def open_excel_file(filename, data_to_scrape):
 				italia = pd.read_excel(filename,
 				                       sheet_name='Italia',
 				                       header=4)
-
 				return fantagazzetta, statistico, italia
-
 			except FileNotFoundError:
 				continue
 
 		else:
 			try:
-
 				players = pd.read_excel(filename, sheet_name='Tutti',
 				                        header=1)
-
 				return players
-
 			except FileNotFoundError:
 				continue
 
@@ -156,9 +152,7 @@ def manage_adblock():
 def scrape_lineups_schemes_points():
 
 	"""
-	Scrape lineups, schemes and absolute points from
-
-		https://leghe.fantagazzetta.com/fantascandalo/formazioni
+	Scrape lineups, schemes and absolute points and update database.
 
 	"""
 
@@ -188,6 +182,7 @@ def scrape_lineups_schemes_points():
 		if day != real_day:
 			break
 
+		# If some lineup is missing, stop
 		missing_lineups = len(brow.find_elements_by_xpath(
 				'.//div[contains(@class, "hidden-formation")]'))
 		if missing_lineups:
@@ -204,6 +199,7 @@ def scrape_lineups_schemes_points():
 
 		# Iterate the matches and update database
 		for match in matches:
+			scroll_to_element(brow, match)
 			teams = match.find_elements_by_xpath(
 					'.//h4[@class="media-heading ellipsis"]')
 			schemes = match.find_elements_by_xpath('.//h5')
@@ -277,10 +273,11 @@ def scrape_lineups_schemes_points():
 
 				if scrape_points:
 					scroll_to_element(brow, score)
+					score = float(score.text.split('\n')[0])
 					dbf.db_update(
 							table='absolute_points',
 							columns=[f'day_{day}'],
-							values=[float(score.text.split('\n')[0])],
+							values=[score],
 							where=f'team_name="{team_name}"')
 
 	return brow
@@ -311,7 +308,6 @@ def scrape_allplayers_fantateam(brow):
 	shortlists = ('.//li[contains(@class,'
 	              '"list-rosters-item raised-2 current-competition-team")]')
 	shortlists = brow.find_elements_by_xpath(shortlists)
-
 	for shortlist in shortlists:
 
 		# Name of the fantateam
@@ -381,6 +377,7 @@ def scrape_roles_and_players_serie_a(brow):
 	Players are used when 6 politico is needed.
 
 	:param brow: selenium browser instance
+
 	:return: selenium browser instance
 
 	"""

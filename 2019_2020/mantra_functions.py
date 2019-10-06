@@ -2,6 +2,8 @@ import db_functions as dbf
 from itertools import combinations, permutations
 from collections import Counter
 
+START_PLAYERS = 10
+
 
 def add_roles(list_of_players):
 
@@ -268,7 +270,7 @@ def deploy_goalkeeper(gkeep_field, gkeep_bench):
 	return gkeep, max_subst
 
 
-def mantra(day, fantateam, starting_players, source, roles):
+def mantra(day, fantateam, starting_players, source, roles, save_lineup=True):
 
 	"""
 	Find the valid lineup of the day.
@@ -278,6 +280,7 @@ def mantra(day, fantateam, starting_players, source, roles):
 	:param starting_players: int
 	:param source: str
 	:param roles: bool, if False return only the names of the players
+	:param save_lineup: bool
 
 	:return: tuple, (lineup, scheme, n_malus)
 
@@ -303,8 +306,12 @@ def mantra(day, fantateam, starting_players, source, roles):
 	# If no substitutions needed
 	if not n_subst:
 		n_malus, scheme = check_when_0_subst(day, fantateam, field_with_roles)
-		field_with_roles.insert(0, gkeep)
-		save_mantra_lineup(day, fantateam, field_with_roles)
+
+		if gkeep:
+			field_with_roles.insert(0, gkeep)
+
+		if save_lineup:
+			save_mantra_lineup(day, fantateam, field_with_roles)
 
 		if roles:
 			return field_with_roles, scheme, n_malus
@@ -324,8 +331,12 @@ def mantra(day, fantateam, starting_players, source, roles):
 	result, new_scheme = optimal(scheme, field_with_roles,
 	                             bench_with_roles, n_subst, players_allowed)
 	if result:
-		result.insert(0, gkeep)
-		save_mantra_lineup(day, fantateam, result)
+
+		if gkeep:
+			result.insert(0, gkeep)
+
+		if save_lineup:
+			save_mantra_lineup(day, fantateam, result)
 
 		if roles:
 			return result, new_scheme, 0
@@ -338,8 +349,12 @@ def mantra(day, fantateam, starting_players, source, roles):
 
 	if result:
 		n_malus = sum([1 for nm, rl in result if '*' in rl])
-		result.insert(0, gkeep)
-		save_mantra_lineup(day, fantateam, result)
+
+		if gkeep:
+			result.insert(0, gkeep)
+
+		if save_lineup:
+			save_mantra_lineup(day, fantateam, result)
 
 		if roles:
 			return result, new_scheme, n_malus
@@ -816,4 +831,72 @@ def save_mantra_lineup(day, fantateam, result):
 			where=f'team_name="{fantateam}"')
 
 
-START_PLAYERS = 10
+def predict_lineup(fantateam, players_out, day):
+
+	"""
+	Calculate the final lineup before all Serie A matches are completed.
+
+	:param fantateam: str
+	:param players_out: list
+	:param day: int
+
+	"""
+
+	# Correct fantateam name
+	all_fantateams = dbf.db_select(table='teams', columns=['team_name'])
+	fantateam = dbf.jaccard_result(input_option=fantateam,
+	                               all_options=all_fantateams,
+	                               ngrm=3)
+
+	# Check if day is already calculated
+	mantra_lineup = dbf.db_select(table='mantra_lineups',
+	                              columns=[f'day_{day}'],
+	                              where=f'team_name="{fantateam}"')
+	if mantra_lineup:
+		print('Day already calculated')
+		return
+
+	# Correct the name of the players which are not playing
+	lineup = dbf.db_select(table='lineups',
+	                       columns=[f'day_{day}'],
+	                       where=f'team_name="{fantateam}"')[0]
+	lineup = lineup.split(', ')
+
+	new_players_out = []
+	for player in players_out:
+		new_player = dbf.jaccard_result(input_option=player,
+		                                all_options=lineup,
+		                                ngrm=3)
+		new_players_out.append(new_player)
+
+	# Add in the database a new entry for the players who will be included in
+	# the lineup
+	for player in lineup:
+		if player not in new_players_out:
+			dbf.db_insert(table='votes',
+			              columns=['day', 'name', 'alvin'],
+			              values=[day, player, 6])
+
+	# Predict lineup and clean the database
+	predicted = mantra(day=day,
+	                   fantateam=fantateam,
+	                   starting_players=START_PLAYERS,
+	                   source='alvin',
+	                   roles=True,
+	                   save_lineup=False)
+	dbf.db_delete(table='votes', where=f'day={day}')
+
+	# Print results
+	for (lineup, scheme, malus) in (predicted,):
+		print('Malus: ', malus)
+		print('Scheme: ', scheme)
+		print(f'Players: {len(lineup)}\n')
+		for player in lineup:
+			print(f'\t{player}')
+
+
+if __name__ == '__main__':
+
+	predict_lineup(fantateam='ciolle',
+	               players_out=['meret', 'karnezis', 'ospina'],
+	               day=7)

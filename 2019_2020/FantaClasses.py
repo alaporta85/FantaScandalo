@@ -1053,7 +1053,7 @@ players = {pl: Player(pl) for pl in players}
 
 # our_round = [dbf.db_select(table='round', columns=['day_{}'.format(i)]) for i
 #              in range(1, len(fantateams))]
-# DAYS = 5
+# DAYS = 6
 # lg = League(fteams=fantateams,
 #             a_round=our_round,
 #             n_days=DAYS,
