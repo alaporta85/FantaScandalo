@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import mantra_functions as mf
 import extra_functions as ef
+from IPython.display import display
 
 
 class Player(object):
@@ -455,7 +456,7 @@ class League(object):
 
 		return df
 
-	def create_ranking(self):
+	def create_ranking(self, double_check=True):
 
 		"""
 		Create the dataframe with the main attributes for each fantateam.
@@ -476,7 +477,8 @@ class League(object):
 
 		cols = ['G', 'V', 'N', 'P', 'G+', 'G-', 'Dr', 'Pt', 'Tot Pt']
 		df = pd.DataFrame.from_dict(data, orient='index', columns=cols)
-		assert_df_is_correct(df, cols)
+		if double_check:
+			assert_df_is_correct(df, cols)
 
 		df.sort_values(by='N', ascending=False, inplace=True)
 		df.sort_values(by='V', ascending=False, inplace=True)
@@ -615,8 +617,9 @@ class League(object):
 		fig.subplots_adjust(left=.3, bottom=.3)
 		ax.tick_params(axis='both', labelsize=10)
 
-		return sns.heatmap(df, annot=True, annot_kws={"size": 12},
-		                   cmap='YlGn_r', square=True, cbar=False)
+		sns.heatmap(df, annot=True, annot_kws={"size": 12},
+		            cmap='YlGn_r', square=True, cbar=False)
+		plt.show()
 
 
 class FastFantateam(object):
@@ -721,13 +724,12 @@ class FastLeague(object):
 
 class Calendar(object):
 
-	def __init__(self, fteams, n_leagues, n_days, source):
+	def __init__(self, fteams, n_leagues, n_days, verbose=True):
 
 		"""
 		:param fteams: list
 		:param n_leagues: int
 		:param n_days: int
-		:param source: str
 
 		"""
 
@@ -740,8 +742,9 @@ class Calendar(object):
 		self.max_pt = {team: 0 for team in fteams}
 		self.min_pt = {team: 100 for team in fteams}
 		self.avg = {team: 0 for team in fteams}
+		self.verbose = verbose
 
-		self.simulation(fteams, n_days, source)
+		self.simulation(fteams, n_days, source='alvin')
 		for pos in self.archive:
 			for team in self.archive[pos]:
 				self.archive[pos][team].sort(key=lambda x: x[0], reverse=True)
@@ -780,7 +783,8 @@ class Calendar(object):
 
 				self.avg[tm] += points[pos - 1] / len(self.rounds)
 
-			print(f'\rCampionati giocati: {i}/{len(self.rounds)}', end='')
+			if self.verbose:
+				print(f'\rCampionati giocati: {i}/{len(self.rounds)}', end='')
 
 	def stats(self, teams):
 
@@ -825,14 +829,11 @@ class Calendar(object):
 		:param position: int
 		:param n_days: int
 
-		:return: pd.DataFrame
-
 		"""
 
 		res = self.archive[position][team]
 		if not res:
 			print(f'{team} mai in {position}° posizione.')
-			return None, None
 		else:
 			if len(res) == 1:
 				name = 'campionato'
@@ -842,8 +843,7 @@ class Calendar(object):
 			print(f'{team} in {position}° posizione: '
 			      f'{len(res)} {name} su {self.n_leagues}.')
 
-			rn = [['{} - {}'.format(tm1, tm2) for tm1, tm2 in el]
-			      for el in res[0]]
+			rn = [[f'{tm1} - {tm2}' for tm1, tm2 in el] for el in res[0]]
 
 			rn_complete = ef.generate_schedule(rn, n_days)
 
@@ -877,7 +877,15 @@ class Calendar(object):
 			df.set_index('N', drop=True, inplace=True)
 			df.index.name = None
 
-			return df.style.set_properties(**{'width': '50px'}), rn
+			sp = League(fteams=fantateams,
+		                a_round=rn,
+		                n_days=DAYS,
+		                all_players=players,
+		                captain=True,
+		                rfactor=True,
+		                source='alvin')
+			display(sp.create_ranking(double_check=False))
+			display(df.style.set_properties(**{'width': '50px'}))
 
 
 def assert_df_is_correct(dataframe, columns):
@@ -960,10 +968,25 @@ def get_result(team1, team2, day):
 
 def average_global_std(fteams, days, num_leagues, iterations):
 
+	"""
+	Compute the average std in the final positions (in %) of each team after
+	running several random leagues multiple times.
+	The lower the std the more reliable the result to be representative of the
+	global behaviour.
+
+	:param fteams: list
+	:param days: int
+	:param num_leagues: int
+	:param iterations: int
+
+	:return: dict
+
+	"""
+
 	avg_std = {team: [] for team in fteams}
 
 	for i in range(iterations):
-		cl = Calendar(fteams, num_leagues, days, 'alvin')
+		cl = Calendar(fteams, num_leagues, days, verbose=False)
 		positions = cl.positions
 
 		for team in fteams:
@@ -1034,37 +1057,53 @@ def rfactor_points(rfac_true_false, rfac_details, lineup, day, source):
 	return rfac_details[n_suff]
 
 
-def optimal_number_iterations(fteams, days, leagues_options,
-                              iter_each_option, verbose):
+def optimal_number_iterations(verbose):
+
+	"""
+	Run many random leagues in order to find out the number of random leagues
+	needed to have stable and reproducible results.
+
+	:param verbose: bool
+
+	"""
+
+	n_leagues = (
+			[i for i in range(1, 11)] +
+			[i for i in range(20, 101, 10)] +
+			[i for i in range(250, 1001, 250)] +
+			[i for i in range(2000, 10001, 2000)]
+	)
+	iteration_each_league = 5
 
 	results = []
-	for iters in leagues_options:
-		results.append(average_global_std(fteams, days, iters,
-		                                  iter_each_option))
+	for iters in n_leagues:
+		results.append(average_global_std(fantateams, DAYS, iters,
+		                                  iteration_each_league))
 		if verbose:
-			print(iters)
+			print(f'\r{iters}', end='')
 
-	return results
+	fig, ax = plt.subplots(figsize=(9, 6))
+	plt.plot(n_leagues, results, marker='o', c='r')
+	ax.spines['right'].set_visible(False)
+	ax.spines['top'].set_visible(False)
+	plt.xlabel('Numero di campionati', fontsize=20)
+	_ = plt.ylabel('Variabilità risultato', fontsize=20)
+	plt.savefig('Loss_vs_n_leagues.png')
+	plt.show()
 
 
 players = set(dbf.db_select(table='votes', columns=['name']))
 fantateams = dbf.db_select(table='teams', columns=['team_name'])
 players = {pl: Player(pl) for pl in players}
 
-# our_round = [dbf.db_select(table='round', columns=['day_{}'.format(i)]) for i
-#              in range(1, len(fantateams))]
-# DAYS = 6
-# lg = League(fteams=fantateams,
-#             a_round=our_round,
-#             n_days=DAYS,
-#             all_players=players,
-#             captain=True,
-#             rfactor=True,
-#             source='alvin')
-#
-# lg.create_ranking()
+our_round = [dbf.db_select(table='round', columns=[f'day_{i}'])
+             for i in range(1, len(fantateams))]
+DAYS = dbf.db_select(table='absolute_points',
+                     columns=['*'],
+                     where='team_name = "Ciolle United"')[0]
+try:
+	DAYS = DAYS.index(None) - 1
+except ValueError:
+	DAYS = len(DAYS) - 1
 
-# n_leagues = 600
-#
-# cl = Calendar(fantateams, n_leagues, DAYS, 'alvin')
-# cl.specific_round('Fc Roxy', 1, DAYS)
+print(f'Giornate disputate: {DAYS}')

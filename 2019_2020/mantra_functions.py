@@ -897,6 +897,6 @@ def predict_lineup(fantateam, players_out, day):
 
 if __name__ == '__main__':
 
-	predict_lineup(fantateam='ciolle',
-	               players_out=['meret', 'karnezis', 'ospina'],
+	predict_lineup(fantateam='roxy',
+	               players_out=['silvestri', 'pussetto', 'aina'],
 	               day=7)
