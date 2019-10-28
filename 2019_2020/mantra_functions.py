@@ -1,4 +1,5 @@
 import db_functions as dbf
+from update_database import last_day_played
 from itertools import combinations, permutations
 from collections import Counter
 
@@ -80,7 +81,7 @@ def check_when_0_subst(day, fantateam, players_in_field):
 					where=f'role = "{role_to_cover[0]}"')[0]
 			rl_malus = rl_malus.split(';')
 			rl = set(rl_malus) & set(role_in_field)
-			players_in_field[i] = (players_in_field[0], list(rl)[0])
+			players_in_field[i] = (players_in_field[i][0], f'*{list(rl)[0]}')
 
 	return malus, scheme
 
@@ -167,59 +168,52 @@ def create_players_candidates(list_of_tuples, players_needed):
 	return candidates
 
 
-def create_schemes_candidates(list_of_roles, players_needed):
+def create_schemes_candidates(roles, players_needed):
 
 	"""
 	See function create_players_candidates.
 
-	:param list_of_roles: list of strings
+	:param roles: list of strings
 	:param players_needed: int
 
 	:return: list of lists
 
 	"""
 
-	single = []
+	def comb_is_valid(comb):
 
-	for i, roles in enumerate(list_of_roles):
+		"""
+		Check that no interchangeble roles are present in comb.
 
-		for role in roles.split('/'):
-			single.append((i, role))
+		:param comb: tuple
 
+		:return: bool
+
+		"""
+
+		return len(set([idx for idx, _ in comb])) == players_needed
+
+	# Roles which are interchangeble will have the same index
+	single = [(i, rl) for i, rls in enumerate(roles) for rl in rls.split('/')]
 	combs = list(combinations(single, players_needed))
 
-	candidates = []
-	for comb in combs:
-		comb_is_ok = len(set([i[0] for i in comb])) == players_needed
-		if comb_is_ok:
-			candidates.append([i[1] for i in comb])
-
-	return candidates
+	return [[rl for _, rl in comb] for comb in combs if comb_is_valid(comb)]
 
 
-def filter_players_without_vote(day, list_of_players, source):
+def filter_players_without_vote(day, players, source):
 
 	"""
 	Return the list players after removing the ones without vote on that day.
 
 	:param day: int
-	:param list_of_players: list of str
+	:param players: list of str
 	:param source: str
 
 	:return: list of str
 
 	"""
 
-	after_filtering = []
-
-	for player in list_of_players:
-
-		vote = player_vote(day, player, source)
-
-		if vote != 'sv':
-			after_filtering.append(player)
-
-	return after_filtering
+	return [pl for pl in players if player_vote(day, pl, source) != 'sv']
 
 
 def flatten_dict(counter_dict):
@@ -233,13 +227,7 @@ def flatten_dict(counter_dict):
 
 	"""
 
-	flat_list = []
-
-	for role in counter_dict:
-		for i in range(counter_dict[role]):
-			flat_list.append(role)
-
-	return flat_list
+	return [role for role in counter_dict for _ in range(counter_dict[role])]
 
 
 def deploy_goalkeeper(gkeep_field, gkeep_bench):
@@ -382,10 +370,7 @@ def player_vote(day, player_name, source):
             columns=[source],
             where=f'day={day} AND name="{player_name}"')
 
-	if not vote:
-		return 'sv'
-	else:
-		return vote[0]
+	return vote[0] if vote else 'sv'
 
 
 def schemes_to_iterate(day, fantateam):
@@ -451,28 +436,17 @@ def filter_for_pc(players_in_field, subst):
 
 	"""
 
-	pc_already_in_field = sum([1 for nm, rl in players_in_field if rl == 'Pc'])
-	a_already_in_field = sum([1 for nm, rl in players_in_field if rl == 'A'])
+	pc_already_in_field = sum([1 for _, rl in players_in_field if rl == 'Pc'])
+	a_already_in_field = sum([1 for _, rl in players_in_field if rl == 'A'])
 
-	if (pc_already_in_field == 2 or
-				(pc_already_in_field == 1 and a_already_in_field == 2)):
+	cond1 = pc_already_in_field == 2
+	cond2 = pc_already_in_field == 1 and a_already_in_field == 2
 
-		new_subst = []
+	if cond1 or cond2:
+		subst = [el for el in subst if el[1] != 'Pc']
+		subst = [(nm, rl.replace(';A', '')) for nm, rl in subst if rl != 'A']
 
-		for nm, rl in subst:
-			rl = rl.split(';')
-			if 'Pc' in rl:
-				rl.remove('Pc')
-			if 'A' in rl:
-				rl.remove('A')
-
-			if rl:
-				new_subst.append((nm, ';'.join(rl)))
-
-		return new_subst
-
-	else:
-		return subst
+	return subst
 
 
 def optimal(scheme, field_with_roles, bench_with_roles,
@@ -798,15 +772,7 @@ def too_many_pc(players_roles):
 
 	"""
 
-	pc = 0
-
-	for player, roles in players_roles:
-		roles = roles.split(';')
-
-		if 'Pc' in roles:
-			c = Counter(roles)
-			pc += c['Pc']
-
+	pc = sum([1 for pl, rl in players_roles if rl == 'Pc'])
 	return True if pc > 2 else False
 
 
@@ -831,7 +797,64 @@ def save_mantra_lineup(day, fantateam, result):
 			where=f'team_name="{fantateam}"')
 
 
-def predict_lineup(fantateam, players_out, day):
+def add_temporary_lineup_and_scheme_in_db(fantateam, day, lineup, scheme):
+
+	"""
+	Create a valid lineup in the db in order to allow mantra prediction.
+
+	:param fantateam: str
+	:param day: int
+	:param lineup: list
+	:param scheme: str
+
+	"""
+
+	# Fix names in lineup
+	shortlist = dbf.db_select(table='all_players',
+	                          columns=[f'day_{day-1}'],
+	                          where=f'team_name="{fantateam}"')[0]
+	shortlist = shortlist.split(', ')
+	for i, pl in enumerate(lineup):
+		new_pl = dbf.jaccard_result(in_opt=pl,
+		                            all_opt=shortlist,
+		                            ngrm=3)
+		lineup[i] = new_pl
+
+	# Update db
+	dbf.db_update(table='lineups',
+	              columns=[f'day_{day}'],
+	              values=[', '.join(lineup)],
+	              where=f'team_name = "{fantateam}"')
+	dbf.db_update(table='schemes',
+	              columns=[f'day_{day}'],
+	              values=[scheme],
+	              where=f'team_name = "{fantateam}"')
+
+
+def clean_db_from_temporary_data(fantateam, day):
+
+	"""
+	Remove from db the temporary data used for mantra prediction.
+
+	:param fantateam: str
+	:param day: int
+
+	"""
+
+	dbf.db_delete(table='votes', where=f'day={day}')
+
+	dbf.db_update(table='lineups',
+	              columns=[f'day_{day}'],
+	              values=[''],
+	              where=f'team_name = "{fantateam}"')
+
+	dbf.db_update(table='schemes',
+	              columns=[f'day_{day}'],
+	              values=[''],
+	              where=f'team_name = "{fantateam}"')
+
+
+def predict_lineup(fantateam, players_out, day, lineup=None, scheme=None):
 
 	"""
 	Calculate the final lineup before all Serie A matches are completed.
@@ -839,13 +862,15 @@ def predict_lineup(fantateam, players_out, day):
 	:param fantateam: str
 	:param players_out: list
 	:param day: int
+	:param lineup: list or None
+	:param scheme: str
 
 	"""
 
-	# Correct fantateam name
+	# Fix fantateam name
 	all_fantateams = dbf.db_select(table='teams', columns=['team_name'])
-	fantateam = dbf.jaccard_result(input_option=fantateam,
-	                               all_options=all_fantateams,
+	fantateam = dbf.jaccard_result(in_opt=fantateam,
+	                               all_opt=all_fantateams,
 	                               ngrm=3)
 
 	# Check if day is already calculated
@@ -856,35 +881,44 @@ def predict_lineup(fantateam, players_out, day):
 		print('Day already calculated')
 		return
 
-	# Correct the name of the players which are not playing
+	# Insert lineup and scheme in the db if missing
+	if lineup:
+		add_temporary_lineup_and_scheme_in_db(fantateam=fantateam,
+		                                      day=day,
+		                                      lineup=lineup,
+		                                      scheme=scheme)
+
+	# Fix the names of the players which are not playing
 	lineup = dbf.db_select(table='lineups',
 	                       columns=[f'day_{day}'],
 	                       where=f'team_name="{fantateam}"')[0]
 	lineup = lineup.split(', ')
 
-	new_players_out = []
-	for player in players_out:
-		new_player = dbf.jaccard_result(input_option=player,
-		                                all_options=lineup,
-		                                ngrm=3)
-		new_players_out.append(new_player)
+	for i, pl in enumerate(players_out):
+		new_pl = dbf.jaccard_result(in_opt=pl,
+		                            all_opt=lineup,
+		                            ngrm=3)
+		players_out[i] = new_pl
 
 	# Add in the database a new entry for the players who will be included in
 	# the lineup
 	for player in lineup:
-		if player not in new_players_out:
+		if player not in players_out:
 			dbf.db_insert(table='votes',
 			              columns=['day', 'name', 'alvin'],
 			              values=[day, player, 6])
 
-	# Predict lineup and clean the database
+	# Predict lineup
 	predicted = mantra(day=day,
 	                   fantateam=fantateam,
 	                   starting_players=START_PLAYERS,
 	                   source='alvin',
 	                   roles=True,
 	                   save_lineup=False)
-	dbf.db_delete(table='votes', where=f'day={day}')
+
+	if day != last_day_played():
+		# Clean db
+		clean_db_from_temporary_data(fantateam=fantateam, day=day)
 
 	# Print results
 	for (lineup, scheme, malus) in (predicted,):
@@ -897,6 +931,15 @@ def predict_lineup(fantateam, players_out, day):
 
 if __name__ == '__main__':
 
-	predict_lineup(fantateam='roxy',
-	               players_out=['silvestri', 'pussetto', 'aina'],
-	               day=7)
+	predict_lineup(fantateam='bomba',
+	               players_out=['florenzi', 'caputo'],
+	               day=9,
+	               # lineup=['meret',
+	               #         'koulou', 'bonucci', 'toloi',
+	               #         'asamoah', 'khedira', 'brozo', 'ghoulam',
+	               #         'ruiz', 'mertens', 'inglese',
+	               #         'castro', 'dzeko', 'lasagna', 'traore',
+	               #         'lazzari', 'marusic', 'palomino', 'musacchio',
+	               #         'bonifazi', 'djidji', 'ospina', 'karnezis'],
+	               # scheme='3-4-1-2'
+	               )

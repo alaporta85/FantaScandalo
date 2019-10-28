@@ -1,4 +1,5 @@
 import sqlite3
+import numpy as np
 from nltk.metrics.distance import jaccard_distance
 from nltk.util import ngrams
 
@@ -116,44 +117,31 @@ def db_update(table, columns, values, where):
     db.close()
 
 
-def jaccard_result(input_option, all_options, ngrm):
+def jaccard_result(in_opt, all_opt, ngrm):
 
     """
     Fix user input.
 
-    :param input_option: str
-
-    :param all_options: list
-
+    :param in_opt: str
+    :param all_opt: list
     :param ngrm: int, ngrams length
-
 
     :return jac_res: str
 
     """
 
-    dist = 1
-    input_option = input_option.lower()
-    tri_guess = set(ngrams(input_option, ngrm))
-    jac_res = ''
+    in_opt = in_opt.lower().replace(' ', '')
+    n_in = set(ngrams(in_opt, ngrm))
 
-    for opt in all_options:
-        p = opt.replace(' ', '').lower()
-        trit = set(ngrams(p, ngrm))
-        jd = jaccard_distance(tri_guess, trit)
-        if not jd:
-            return opt
-        elif jd < dist:
-            dist = jd
-            jac_res = opt
+    out_opts = [pl.lower().replace(' ', '') for pl in all_opt]
+    n_outs = [set(ngrams(pl, ngrm)) for pl in out_opts]
 
-    if not jac_res and ngrm > 2:
-        return jaccard_result(input_option, all_options, ngrm - 1)
+    distances = [jaccard_distance(n_in, n_out) for n_out in n_outs]
 
-    elif not jac_res and ngrm == 2:
-        return False
-
-    return jac_res
+    if len(set(distances)) == 1:
+        return jaccard_result(in_opt, all_opt, ngrm-1) if ngrm > 2 else False
+    else:
+        return all_opt[np.argmin(distances)]
 
 
 def start_db():

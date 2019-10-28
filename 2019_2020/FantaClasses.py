@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import mantra_functions as mf
 import extra_functions as ef
+from update_database import last_day_played
 from IPython.display import display
 
 
@@ -1092,18 +1093,24 @@ def optimal_number_iterations(verbose):
 	plt.show()
 
 
-players = set(dbf.db_select(table='votes', columns=['name']))
 fantateams = dbf.db_select(table='teams', columns=['team_name'])
+
+players = set(dbf.db_select(table='votes', columns=['name']))
 players = {pl: Player(pl) for pl in players}
 
 our_round = [dbf.db_select(table='round', columns=[f'day_{i}'])
              for i in range(1, len(fantateams))]
-DAYS = dbf.db_select(table='absolute_points',
-                     columns=['*'],
-                     where='team_name = "Ciolle United"')[0]
-try:
-	DAYS = DAYS.index(None) - 1
-except ValueError:
-	DAYS = len(DAYS) - 1
+
+DAYS = last_day_played()
 
 print(f'Giornate disputate: {DAYS}')
+
+# lg = League(fteams=fantateams,
+#             a_round=our_round,
+#             n_days=DAYS,
+#             all_players=players,
+#             captain=True,
+#             rfactor=True,
+#             source='alvin')
+#
+# lg.create_ranking(double_check=True)

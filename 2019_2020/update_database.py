@@ -5,7 +5,7 @@ import pandas as pd
 from collections import defaultdict
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support import expected_conditions as ec
 from selenium.webdriver.common.by import By
 from selenium import webdriver
 
@@ -15,7 +15,7 @@ YEAR = '2019-20'
 BASE_URL = 'https://leghe.fantacalcio.it/fantascandalo/'
 
 
-def add_6politico(day):
+def add_6_politico_if_needed(day):
 
 	"""
 	Assign 6 to each player of the matches which have not been played.
@@ -28,7 +28,6 @@ def add_6politico(day):
 			table='votes',
 			columns=['team'],
 			where=f'day = {day}'))
-
 	if len(teams_in_day) == 20:
 		return
 
@@ -500,7 +499,7 @@ def scrape_votes(brow):
 		# Update 'italia' votes
 		update_other_votes(day, 'italia', italia)
 
-		add_6politico(day)
+		add_6_politico_if_needed(day)
 
 	return brow
 
@@ -558,7 +557,7 @@ def wait_clickable(brow, seconds, element):
 	"""
 
 	WebDriverWait(
-			brow, seconds).until(EC.element_to_be_clickable(
+			brow, seconds).until(ec.element_to_be_clickable(
 					(By.XPATH, element)))
 
 
@@ -577,7 +576,7 @@ def wait_visible(brow, seconds, element):
 	"""
 
 	WebDriverWait(
-			brow, seconds).until(EC.visibility_of_element_located(
+			brow, seconds).until(ec.visibility_of_element_located(
 					(By.XPATH, element)))
 
 
@@ -613,8 +612,9 @@ def wrong_day_to_scrape(brow, day):
 	return False
 
 
-browser = scrape_lineups_schemes_points()
-browser = scrape_allplayers_fantateam(browser)
-scrape_roles_and_players_serie_a(browser)
-scrape_votes(browser)
-scrape_classifica(browser)
+if __name__ == '__main__':
+	browser = scrape_lineups_schemes_points()
+	browser = scrape_allplayers_fantateam(browser)
+	scrape_roles_and_players_serie_a(browser)
+	scrape_votes(browser)
+	scrape_classifica(browser)
