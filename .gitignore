@@ -1,9 +1,7 @@
 # ignore everything
 *
 
-# don't ignore directories
+# except for directories, .py and .db
 !*/
-
-# and don't ignore files ending with ".py" and ".db"
 !*.py
 !*.db

@@ -1,5 +1,4 @@
 import db_functions as dbf
-from update_database import last_day_played
 from itertools import combinations, permutations
 from collections import Counter
 
@@ -11,27 +10,26 @@ def add_roles(list_of_players):
 	"""
 	Add the corresponding role for each player in list_of_players. Ex:
 
-	:param list_of_players: list, Ex. ['SKORUPSKI', 'ASAMOAH', 'FAZIO', ...]
+	:param list_of_players: list, Ex. ['SKORUPSKI', 'ASAMOAH', ...]
 
-	:return: tuple, Ex. ([('SKORUPSKI', 'Por')],
-						 [('ASAMOAH', 'Ds;E'), ('FAZIO', 'Dc'), ...])
+	:return: tuple, Ex. [('SKORUPSKI', 'Por'), ('ASAMOAH', 'Ds;E'), ...]
 
 	"""
 
-	final_list = []
+	gkeep_list = []
+	field_list = []
 	for player in list_of_players:
 		role = dbf.db_select(
 				table='roles',
 				columns=['role'],
 				where=f'name = "{player}"')[0]
-		final_list.append((player, role))
 
-	# Separate goal-keepers from other players
-	gkeep_list = [(nm, rl) for nm, rl in final_list if rl == 'Por']
-	for gkeep in gkeep_list:
-		final_list.remove(gkeep)
+		if role == 'Por':
+			gkeep_list.append((player, role))
+		else:
+			field_list.append((player, role))
 
-	return gkeep_list, final_list
+	return gkeep_list, field_list
 
 
 def check_when_0_subst(day, fantateam, players_in_field):
@@ -841,8 +839,6 @@ def clean_db_from_temporary_data(fantateam, day):
 
 	"""
 
-	dbf.db_delete(table='votes', where=f'day={day}')
-
 	dbf.db_update(table='lineups',
 	              columns=[f'day_{day}'],
 	              values=[''],
@@ -866,6 +862,8 @@ def predict_lineup(fantateam, players_out, day, lineup=None, scheme=None):
 	:param scheme: str
 
 	"""
+
+	clean_db = True if lineup else False
 
 	# Fix fantateam name
 	all_fantateams = dbf.db_select(table='teams', columns=['team_name'])
@@ -916,8 +914,8 @@ def predict_lineup(fantateam, players_out, day, lineup=None, scheme=None):
 	                   roles=True,
 	                   save_lineup=False)
 
-	if day != last_day_played():
-		# Clean db
+	dbf.db_delete(table='votes', where=f'day={day}')
+	if clean_db:
 		clean_db_from_temporary_data(fantateam=fantateam, day=day)
 
 	# Print results
@@ -931,9 +929,9 @@ def predict_lineup(fantateam, players_out, day, lineup=None, scheme=None):
 
 if __name__ == '__main__':
 
-	predict_lineup(fantateam='bomba',
-	               players_out=['florenzi', 'caputo'],
-	               day=9,
+	predict_lineup(fantateam='ciolle',
+	               players_out=['mertens'],
+	               day=13,
 	               # lineup=['meret',
 	               #         'koulou', 'bonucci', 'toloi',
 	               #         'asamoah', 'khedira', 'brozo', 'ghoulam',
