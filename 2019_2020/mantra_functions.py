@@ -919,18 +919,28 @@ def predict_lineup(fantateam, players_out, day, lineup=None, scheme=None):
 		clean_db_from_temporary_data(fantateam=fantateam, day=day)
 
 	# Print results
+	field = lineup[:11]
+	bench = lineup[11:]
 	for (lineup, scheme, malus) in (predicted,):
 		print('Malus: ', malus)
 		print('Scheme: ', scheme)
-		print(f'Players: {len(lineup)}\n')
+		print(f'Players: {len(lineup)}')
+
+		print('\nRegular:')
 		for player in lineup:
-			print(f'\t{player}')
+			if player[0] in field:
+				print(f'\t{player}')
+
+		print(f'\nFrom bench:')
+		for player in lineup:
+			if player[0] in bench:
+				print(f'\t{player}')
 
 
 if __name__ == '__main__':
 
 	predict_lineup(fantateam='picchia',
-	               players_out=['de ligt', 'godin', 'ambrosio', 'spinazzola', 'djimsiti'],
+	               players_out=['godin', 'de ligt', 'hateboer', 'spinazzola'],
 	               day=17,
 	               # lineup=['meret',
 	               #         'koulou', 'bonucci', 'gunter',
