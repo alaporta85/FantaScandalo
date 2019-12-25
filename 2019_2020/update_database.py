@@ -46,8 +46,9 @@ def add_6_politico_if_needed(day):
 					table='votes',
 					columns=['day', 'name', 'team', 'fg', 'alvin', 'italia',
 					         'gf', 'gs', 'rp', 'rs', 'rf', 'au', 'amm',
-					         'esp', 'ass'],
-					values=[day, nm, team, 6, 6, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+					         'esp', 'ass', 'regular', 'going_in', 'going_out'],
+					values=[day, nm, team, 6, 6, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+					        0, 0, 0])
 
 
 def close_popup(brow):
@@ -438,6 +439,95 @@ def scrape_roles_and_players_serie_a(brow):
 	return brow
 
 
+# def scrape_votes(brow):
+#
+# 	"""
+# 	Download the excel file with the votes day by day and update the db.
+# 	:param brow: selenium browser instance
+#
+# 	"""
+#
+# 	days_played = last_day_played()
+#
+# 	for day in range(1, days_played + 1):
+#
+# 		if wrong_day_to_scrape(brow, day):
+# 			continue
+#
+# 		filename = ('/Users/andrea/Downloads/Voti_Fantacalcio_' +
+# 		            f'Stagione_{YEAR}_Giornata_{day}.xlsx')
+#
+# 		fantagazzetta, statistico, italia = open_excel_file(filename, 'votes')
+# 		os.remove(filename)
+#
+# 		team = None
+# 		for row in range(len(statistico)):
+#
+# 			# Due to the format of the excel, we handle the team in this way
+# 			if statistico.loc[row, 'ATALANTA'] == 'Cod.' and not team:
+# 				team = 'ATALANTA'
+# 				continue
+# 			elif statistico.loc[row, 'ATALANTA'] == 'Cod.' and team:
+# 				continue
+# 			elif type(statistico.loc[row, 'ATALANTA']) == int:
+# 				pass
+# 			else:
+# 				team = statistico.loc[row, 'ATALANTA']
+# 				continue
+#
+# 			# All values
+# 			(_, rl, nm, alvin, gf, gs, rp, rs,
+# 			 rf, au, amm, esp, ass, asf, _, _) = statistico.iloc[row].values
+#
+# 			# Transform '6*' in 'sv'. It means player has no vote
+# 			alvin = 'sv' if type(alvin) == str else alvin
+#
+# 			# Skip the coach
+# 			if rl == 'ALL':
+# 				continue
+#
+# 			# Update db
+# 			dbf.db_insert(
+# 					table='votes',
+# 					columns=['day', 'name', 'team', 'alvin', 'gf', 'gs',
+# 					         'rp', 'rs', 'rf', 'au', 'amm', 'esp', 'ass'],
+# 					values=[day, nm.strip(), team, alvin, gf, gs,
+# 					        rp, rs, rf, au, amm, esp, ass+asf])
+#
+# 		# Update 'fg' votes
+# 		update_other_votes(day, 'fg', fantagazzetta)
+#
+# 		# Update 'italia' votes
+# 		update_other_votes(day, 'italia', italia)
+#
+# 		add_6_politico_if_needed(day)
+#
+# 	return brow
+
+
+def regular_or_from_bench(player):
+
+	in_out = player.find_elements_by_xpath('.//td/em')
+
+	regular = 0
+	going_in = 0
+	going_out = 0
+	if not in_out:
+		regular += 1
+	else:
+		attrs = [i.get_attribute('title') for i in in_out]
+		if 'Entrato' in attrs and 'Uscito' not in attrs:
+			going_in += 1
+		elif 'Entrato' not in attrs and 'Uscito' in attrs:
+			regular += 1
+			going_out += 1
+		elif 'Entrato' in attrs and 'Uscito' in attrs:
+			going_in += 1
+			going_out += 1
+
+	return regular, going_in, going_out
+
+
 def scrape_votes(brow):
 
 	"""
@@ -447,57 +537,115 @@ def scrape_votes(brow):
 	"""
 
 	days_played = last_day_played()
+	main_url = f'https://www.fantacalcio.it/voti-fantacalcio-serie-a/{YEAR}/'
 
 	for day in range(1, days_played + 1):
 
-		if wrong_day_to_scrape(brow, day):
+		if wrong_day_to_scrape(day):
 			continue
 
-		filename = ('/Users/andrea/Downloads/Voti_Fantacalcio_' +
-		            f'Stagione_{YEAR}_Giornata_{day}.xlsx')
+		url = main_url + str(day)
+		brow.get(url)
 
-		fantagazzetta, statistico, italia = open_excel_file(filename, 'votes')
-		os.remove(filename)
+		all_tables = brow.find_elements_by_xpath('.//table[@role="grid"]')
+		for table in all_tables:
+			team = table.find_element_by_xpath('.//span[@class="txtbig"]')
+			team = team.get_attribute('innerText')
 
-		team = None
-		for row in range(len(statistico)):
+			players = table.find_elements_by_xpath('.//tbody/tr')[:-1]
+			for player in players:
+				regular, going_in, going_out = regular_or_from_bench(player)
+				data = player.find_elements_by_xpath('.//td')
+				del data[1]
 
-			# Due to the format of the excel, we handle the team in this way
-			if statistico.loc[row, 'ATALANTA'] == 'Cod.' and not team:
-				team = 'ATALANTA'
-				continue
-			elif statistico.loc[row, 'ATALANTA'] == 'Cod.' and team:
-				continue
-			elif type(statistico.loc[row, 'ATALANTA']) == int:
-				pass
-			else:
-				team = statistico.loc[row, 'ATALANTA']
-				continue
+				nm = data[0].find_element_by_xpath(
+						'.//a').get_attribute('innerText')
+				fg = data[1].find_element_by_xpath(
+						'.//span').get_attribute('innerText')
+				color = data[1].find_element_by_xpath(
+						'.//span').get_attribute('class')
+				if 'grey' in color:
+					fg = 'sv'
+				else:
+					fg = float(fg.replace(',', '.'))
+				alvin = data[3].find_element_by_xpath(
+						'.//span').get_attribute('innerText')
+				color = data[3].find_element_by_xpath(
+						'.//span').get_attribute('class')
+				if 'grey' in color:
+					alvin = 'sv'
+				else:
+					alvin = float(alvin.replace(',', '.'))
+				try:
+					data[3].find_element_by_xpath(
+							'.//span[contains(@class, "trn-r trn-ry absort")]')
+					amm = 1
+				except NoSuchElementException:
+					amm = 0
+				try:
+					data[3].find_element_by_xpath(
+							'.//span[contains(@class, "trn-r trn-rr absort")]')
+					esp = 1
+				except NoSuchElementException:
+					esp = 0
+				it = data[5].find_element_by_xpath(
+						'.//span').get_attribute('innerText')
+				color = data[5].find_element_by_xpath(
+						'.//span').get_attribute('class')
+				if 'grey' in color:
+					it = 'sv'
+				else:
+					it = float(it.replace(',', '.'))
+				try:
+					gf = data[7].find_element_by_xpath(
+							'.//span').get_attribute('innerText')
+				except NoSuchElementException:
+					gf = 0
+				try:
+					rf = data[8].find_element_by_xpath(
+							'.//span').get_attribute('innerText')
+				except NoSuchElementException:
+					rf = 0
+				try:
+					gs = data[9].find_element_by_xpath(
+							'.//span').get_attribute('innerText')
+				except NoSuchElementException:
+					gs = 0
+				try:
+					rp = data[10].find_element_by_xpath(
+							'.//span').get_attribute('innerText')
+				except NoSuchElementException:
+					rp = 0
+				try:
+					rs = data[11].find_element_by_xpath(
+							'.//span').get_attribute('innerText')
+				except NoSuchElementException:
+					rs = 0
+				try:
+					au = data[12].find_element_by_xpath(
+							'.//span').get_attribute('innerText')
+				except NoSuchElementException:
+					au = 0
+				try:
+					ass = data[13].find_element_by_xpath(
+							'.//span').get_attribute('innerText')
+					if len(ass) == 1:
+						ass = int(ass)
+					else:
+						ass = int(ass[0])
+				except NoSuchElementException:
+					ass = 0
 
-			# All values
-			(_, rl, nm, alvin, gf, gs, rp, rs,
-			 rf, au, amm, esp, ass, asf, _, _) = statistico.iloc[row].values
-
-			# Transform '6*' in 'sv'. It means player has no vote
-			alvin = 'sv' if type(alvin) == str else alvin
-
-			# Skip the coach
-			if rl == 'ALL':
-				continue
-
-			# Update db
-			dbf.db_insert(
-					table='votes',
-					columns=['day', 'name', 'team', 'alvin', 'gf', 'gs',
-					         'rp', 'rs', 'rf', 'au', 'amm', 'esp', 'ass'],
-					values=[day, nm.strip(), team, alvin, gf, gs,
-					        rp, rs, rf, au, amm, esp, ass+asf])
-
-		# Update 'fg' votes
-		update_other_votes(day, 'fg', fantagazzetta)
-
-		# Update 'italia' votes
-		update_other_votes(day, 'italia', italia)
+				# Update db
+				dbf.db_insert(
+						table='votes',
+						columns=['day', 'name', 'team', 'fg', 'alvin', 'italia',
+						         'gf', 'gs', 'rp', 'rs', 'rf', 'au', 'amm',
+						         'esp', 'ass', 'regular', 'going_in',
+						         'going_out'],
+						values=[day, nm.strip(), team, fg, alvin, it, gf, gs,
+						        rp, rs, rf, au, amm, esp, ass,
+						        regular, going_in, going_out])
 
 		add_6_politico_if_needed(day)
 
@@ -580,19 +728,16 @@ def wait_visible(brow, seconds, element):
 					(By.XPATH, element)))
 
 
-def wrong_day_to_scrape(brow, day):
+def wrong_day_to_scrape(day):
 
 	"""
 	Check if we need to scrape votes relative to 'day'.
 
-	:param brow: selenium browser instance
 	:param day: int
 
 	:return: bool
 
 	"""
-
-	url = f'https://www.fantacalcio.it/voti-fantacalcio-serie-a/{YEAR}/{day}'
 
 	teams_in_db = set(dbf.db_select(
 			table='votes',
@@ -601,15 +746,8 @@ def wrong_day_to_scrape(brow, day):
 
 	if len(teams_in_db) == 20:
 		return True
-
-	brow.get(url)
-
-	button = './/button[@id="toexcel"]'
-	wait_visible(brow, WAIT, button)
-	brow.find_element_by_xpath(button).click()
-	time.sleep(2)
-
-	return False
+	else:
+		return False
 
 
 if __name__ == '__main__':

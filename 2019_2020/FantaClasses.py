@@ -908,6 +908,8 @@ def assert_df_is_correct(dataframe, columns):
 	dataframe.sort_index(inplace=True)
 
 	if not dataframe.equals(df):
+		dataframe.sort_values('Pt', inplace=True, ascending=False)
+		display(dataframe)
 		raise ValueError('La classifica non coincide con quella reale')
 
 
