@@ -3,19 +3,21 @@ import numpy as np
 from nltk.metrics.distance import jaccard_distance
 from nltk.util import ngrams
 
-database = 'fantascandalo_db.db'
+dbase1 = 'fantascandalo_db.db'
+dbase2 = '/Users/andrea/Desktop/Cartelle/Bots/FantAstaBot/fanta_asta_db.db'
 
 
-def empty_table(table):
+def empty_table(table, database=dbase1):
 
     """
     Delete everything from table.
 
     :param table: str
+    :param database: str
 
     """
 
-    db, c = start_db()
+    db, c = start_db(database)
 
     query = f'DELETE FROM {table}'
 
@@ -24,17 +26,18 @@ def empty_table(table):
     db.close()
 
 
-def db_delete(table, where):
+def db_delete(table, where, database=dbase1):
 
     """
     Remove entry from database.
 
     :param table: str
     :param where: str
+    :param database: str
 
     """
 
-    db, c = start_db()
+    db, c = start_db(database)
 
     query = f'DELETE FROM {table} WHERE {where}'
 
@@ -43,7 +46,7 @@ def db_delete(table, where):
     db.close()
 
 
-def db_insert(table, columns, values):
+def db_insert(table, columns, values, database=dbase1):
 
     """
     Insert a new row in the table.
@@ -51,10 +54,11 @@ def db_insert(table, columns, values):
     :param table: str, name of the table
     :param columns: list, each element of the list is a column of the table.
     :param values: list, values of the corresponding columns
+    :param database: str
 
     """
 
-    db, c = start_db()
+    db, c = start_db(database)
 
     cols = ', '.join(columns)
     vals = ', '.join([f'"{v}"' for v in values])
@@ -65,7 +69,7 @@ def db_insert(table, columns, values):
     db.close()
 
 
-def db_select(table, columns, where=None):
+def db_select(table, columns, where=None, database=dbase1):
 
     """
     Return content from a specific table of the database.
@@ -73,12 +77,13 @@ def db_select(table, columns, where=None):
     :param table: str, name of the table
     :param columns: list, each element of the list is a column of the table.
     :param where: str, condition
+    :param database: str
 
     :return: list of tuples or list of elements
 
     """
 
-    db, c = start_db()
+    db, c = start_db(database)
 
     cols = ', '.join(columns)
     if where:
@@ -95,7 +100,7 @@ def db_select(table, columns, where=None):
     return content
 
 
-def db_update(table, columns, values, where):
+def db_update(table, columns, values, where, database=dbase1):
 
     """
     Update values in the table.
@@ -104,10 +109,11 @@ def db_update(table, columns, values, where):
     :param columns: list, each element of the list is a column of the table.
     :param values: list, values of the corresponding columns
     :param where: str, condition
+    :param database: str
 
     """
 
-    db, c = start_db()
+    db, c = start_db(database)
 
     vals = ', '.join([f'{c}="{v}"' for c, v in zip(columns, values)])
     query = f'UPDATE {table} SET {vals} WHERE {where}'
@@ -144,7 +150,7 @@ def jaccard_result(in_opt, all_opt, ngrm):
         return all_opt[np.argmin(distances)]
 
 
-def start_db():
+def start_db(database):
 
     db = sqlite3.connect(database)
     c = db.cursor()

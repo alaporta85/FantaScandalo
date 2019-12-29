@@ -15,24 +15,37 @@ YEAR = '2019-20'
 BASE_URL = 'https://leghe.fantacalcio.it/fantascandalo/'
 
 
-def add_6_politico_if_needed(day):
+def add_6_politico_if_needed(day, automatic=True, teams=None):
 
 	"""
 	Assign 6 to each player of the matches which have not been played.
 
 	:param day: int
+	:param automatic: bool. If True, it detects automatically which teams
+					  need 6 politico.
+	:param teams: list, Ex. [(7, 'brescia', 'sassuolo')]. It will assign 6
+				  politico to Brescia and Sassuolo on day 7.
 
 	"""
 
-	teams_in_day = set(dbf.db_select(
-			table='votes',
-			columns=['team'],
-			where=f'day = {day}'))
-	if len(teams_in_day) == 20:
-		return
+	if automatic and teams:
+		raise ValueError('When "automatic" is True, "teams" must be None.')
+	elif not automatic and not teams:
+		raise ValueError('When "automatic" is False, "teams" must not be None.')
 
-	all_teams = set(dbf.db_select(table='votes', columns=['team']))
-	missing = all_teams - teams_in_day
+	if automatic:
+		teams_in_day = set(dbf.db_select(
+				table='votes',
+				columns=['team'],
+				where=f'day = {day}'))
+		if len(teams_in_day) == 20:
+			return
+
+		all_teams = set(dbf.db_select(table='votes', columns=['team']))
+		missing = all_teams - teams_in_day
+	else:
+		missing = [team.upper() for data in teams for team in data if
+		           type(team) == str and data[0] == day]
 
 	for team in missing:
 		shortlist = dbf.db_select(
@@ -508,22 +521,21 @@ def scrape_roles_and_players_serie_a(brow):
 def regular_or_from_bench(player):
 
 	in_out = player.find_elements_by_xpath('.//td/em')
+	attrs = [i.get_attribute('title') for i in in_out]
 
 	regular = 0
 	going_in = 0
 	going_out = 0
-	if not in_out:
+	if 'Entrato' not in attrs and 'Uscito' not in attrs:
 		regular += 1
-	else:
-		attrs = [i.get_attribute('title') for i in in_out]
-		if 'Entrato' in attrs and 'Uscito' not in attrs:
-			going_in += 1
-		elif 'Entrato' not in attrs and 'Uscito' in attrs:
-			regular += 1
-			going_out += 1
-		elif 'Entrato' in attrs and 'Uscito' in attrs:
-			going_in += 1
-			going_out += 1
+	elif 'Entrato' in attrs and 'Uscito' not in attrs:
+		going_in += 1
+	elif 'Entrato' not in attrs and 'Uscito' in attrs:
+		regular += 1
+		going_out += 1
+	elif 'Entrato' in attrs and 'Uscito' in attrs:
+		going_in += 1
+		going_out += 1
 
 	return regular, going_in, going_out
 
@@ -574,6 +586,7 @@ def scrape_votes(brow):
 						'.//span').get_attribute('class')
 				if 'grey' in color:
 					alvin = 'sv'
+					going_in = 0
 				else:
 					alvin = float(alvin.replace(',', '.'))
 				try:
@@ -648,7 +661,6 @@ def scrape_votes(brow):
 						        regular, going_in, going_out])
 
 		add_6_politico_if_needed(day)
-
 	return brow
 
 
@@ -750,9 +762,131 @@ def wrong_day_to_scrape(day):
 		return False
 
 
+def calculate_mv(player):
+
+	"""
+	Calculate vote average for player.
+
+	:param player: str
+
+	:return: tuple
+	"""
+
+	votes = dbf.db_select(table='votes',
+	                      columns=['alvin'],
+	                      where=f'name = "{player}" AND alvin != "sv"')
+	matches = len(votes)
+
+	return matches, round(sum(votes)/matches, 2) if matches else 0
+
+
+def calculate_all_bonus(player):
+
+	"""
+	Calculate total bonus for player.
+
+	:param player: str
+
+	:return: int
+	"""
+	plus1 = dbf.db_select(table='votes',
+	                      columns=['ass'],
+	                      where=f'name = "{player}"')
+	plus1 = sum(plus1)
+
+	plus3 = dbf.db_select(table='votes',
+	                      columns=['gf', 'rp', 'rf'],
+	                      where=f'name = "{player}"')
+	plus3 = sum([sum(i) for i in plus3])*3
+
+	return plus1 + plus3
+
+
+def calculate_all_malus(player):
+
+	"""
+	Calculate total malus for player.
+
+	:param player: str
+
+	:return: float
+	"""
+	minus05 = dbf.db_select(table='votes',
+	                        columns=['amm'],
+	                        where=f'name = "{player}"')
+	minus05 = sum(minus05)*.5
+
+	minus1 = dbf.db_select(table='votes',
+	                       columns=['gs', 'esp'],
+	                       where=f'name = "{player}"')
+	minus1 = sum([sum(i) for i in minus1])
+
+	minus2 = dbf.db_select(table='votes',
+	                       columns=['au'],
+	                       where=f'name = "{player}"')
+	minus2 = sum(minus2)*2
+
+	minus3 = dbf.db_select(table='votes',
+	                       columns=['rs'],
+	                       where=f'name = "{player}"')
+	minus3 = sum(minus3) * 3
+
+	return minus05 + minus1 + minus2 + minus3
+
+
+def calculate_regular_in_out(player):
+
+	"""
+	Calculate matches from beginning, going in and going out for player.
+
+	:param player: str
+
+	:return: tuple
+	"""
+	regular = dbf.db_select(table='votes',
+	                        columns=['regular'],
+	                        where=f'name = "{player}"')
+
+	going_in = dbf.db_select(table='votes',
+	                         columns=['going_in'],
+	                         where=f'name = "{player}"')
+
+	going_out = dbf.db_select(table='votes',
+	                          columns=['going_out'],
+	                          where=f'name = "{player}"')
+
+	return sum(regular), sum(going_in), sum(going_out)
+
+
+def update_stats_in_market_database():
+
+	"""
+	Update database used for market with stats.
+	"""
+
+	names = dbf.db_select(table='players',
+	                      columns=['player_name'],
+	                      database=dbf.dbase2)
+
+	for name in names:
+		matches, mv = calculate_mv(name)
+		bonus = calculate_all_bonus(name)
+		malus = calculate_all_malus(name)
+		fmv = round(mv + (bonus - malus)/matches, 2) if matches else 0
+		regular, going_in, going_out = calculate_regular_in_out(name)
+
+		dbf.db_update(table='stats',
+		              columns=['mv', 'fmv', 'regular', 'going_in', 'going_out'],
+		              values=[mv, fmv, regular, going_in, going_out],
+		              where=f'name = "{name}"',
+		              database=dbf.dbase2)
+
+
 if __name__ == '__main__':
 	browser = scrape_lineups_schemes_points()
 	browser = scrape_allplayers_fantateam(browser)
 	scrape_roles_and_players_serie_a(browser)
 	scrape_votes(browser)
 	scrape_classifica(browser)
+
+	update_stats_in_market_database()
