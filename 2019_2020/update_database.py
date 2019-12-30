@@ -362,6 +362,7 @@ def scrape_classifica(brow):
 	time.sleep(3)
 
 	dbf.empty_table(table='classifica')
+	dbf.empty_table(table='classifica', database=dbf.dbase2)
 
 	positions = brow.find_elements_by_xpath(
 			'.//table/tbody/tr[contains(@data-logo, ".png")]')
@@ -379,6 +380,11 @@ def scrape_classifica(brow):
 		dbf.db_insert(table='classifica',
 		              columns=columns,
 		              values=team_data)
+
+		dbf.db_insert(table='classifica',
+		              columns=columns,
+		              values=team_data,
+		              database=dbf.dbase2)
 
 	brow.close()
 
@@ -872,12 +878,12 @@ def update_stats_in_market_database():
 		matches, mv = calculate_mv(name)
 		bonus = calculate_all_bonus(name)
 		malus = calculate_all_malus(name)
-		fmv = round(mv + (bonus - malus)/matches, 2) if matches else 0
+		mfv = round(mv + (bonus - malus)/matches, 2) if matches else 0
 		regular, going_in, going_out = calculate_regular_in_out(name)
 
 		dbf.db_update(table='stats',
-		              columns=['mv', 'fmv', 'regular', 'going_in', 'going_out'],
-		              values=[mv, fmv, regular, going_in, going_out],
+		              columns=['mv', 'mfv', 'regular', 'going_in', 'going_out'],
+		              values=[mv, mfv, regular, going_in, going_out],
 		              where=f'name = "{name}"',
 		              database=dbf.dbase2)
 
