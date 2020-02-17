@@ -15,37 +15,31 @@ YEAR = '2019-20'
 BASE_URL = 'https://leghe.fantacalcio.it/fantascandalo/'
 
 
-def add_6_politico_if_needed(day, automatic=True, teams=None):
+def add_6_politico_if_needed(day):
 
 	"""
 	Assign 6 to each player of the matches which have not been played.
 
 	:param day: int
-	:param automatic: bool. If True, it detects automatically which teams
-					  need 6 politico.
-	:param teams: list, Ex. [(7, 'brescia', 'sassuolo')]. It will assign 6
-				  politico to Brescia and Sassuolo on day 7.
 
 	"""
 
-	if automatic and teams:
-		raise ValueError('When "automatic" is True, "teams" must be None.')
-	elif not automatic and not teams:
-		raise ValueError('When "automatic" is False, "teams" must not be None.')
+	teams_in_day = set(dbf.db_select(
+			table='votes',
+			columns=['team'],
+			where=f'day = {day}'))
+	if len(teams_in_day) == 20:
+		return
 
-	if automatic:
-		teams_in_day = set(dbf.db_select(
-				table='votes',
-				columns=['team'],
-				where=f'day = {day}'))
-		if len(teams_in_day) == 20:
-			return
+	all_teams = set(dbf.db_select(table='votes', columns=['team']))
+	missing = all_teams - teams_in_day
 
-		all_teams = set(dbf.db_select(table='votes', columns=['team']))
-		missing = all_teams - teams_in_day
-	else:
-		missing = [team.upper() for data in teams for team in data if
-		           type(team) == str and data[0] == day]
+	votes_of_day = dbf.db_select(
+			table='votes',
+			columns=['day', 'name', 'team', 'fg', 'alvin', 'italia', 'gf',
+			         'gs', 'rp', 'rs', 'rf', 'au', 'amm', 'esp', 'ass',
+			         'regular', 'going_in', 'going_out'],
+			where=f'day = {day}')
 
 	for team in missing:
 		shortlist = dbf.db_select(
@@ -55,13 +49,19 @@ def add_6_politico_if_needed(day, automatic=True, teams=None):
 		shortlist = shortlist.split(', ')
 
 		for nm in shortlist:
-			dbf.db_insert(
-					table='votes',
-					columns=['day', 'name', 'team', 'fg', 'alvin', 'italia',
-					         'gf', 'gs', 'rp', 'rs', 'rf', 'au', 'amm',
-					         'esp', 'ass', 'regular', 'going_in', 'going_out'],
-					values=[day, nm, team, 6, 6, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-					        0, 0, 0])
+			data = (day, nm, team, 6, 6, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+			votes_of_day.append(data)
+
+	votes_of_day.sort(key=lambda x: x[2])
+	dbf.db_delete(table='votes', where=f'day = {day}')
+
+	for row in votes_of_day:
+		dbf.db_insert(
+				table='votes',
+				columns=['day', 'name', 'team', 'fg', 'alvin', 'italia',
+				         'gf', 'gs', 'rp', 'rs', 'rf', 'au', 'amm',
+				         'esp', 'ass', 'regular', 'going_in', 'going_out'],
+				values=[value for value in row])
 
 
 def close_popup(brow):
@@ -327,25 +327,49 @@ def scrape_allplayers_fantateam(brow):
 		team_name = ''
 		while not team_name:
 			team = shortlist.find_element_by_xpath('.//h4')
-			scroll_to_element(brow, team)
-			team_name = team.text
+			team_name = team.get_attribute('innerText').strip()
 
 		# Names containers
 		players = []
 		names = shortlist.find_elements_by_xpath('.//td[@data-key="name"]')
 		for player in names:
-			scroll_to_element(brow, player)
-			name = player.text.upper()
+			name = player.get_attribute('innerText').upper().strip()
 			players.append(name)
 
-		# Update db
+		# Update "all_players" table
 		dbf.db_update(
 				table='all_players',
 				columns=[f'day_{days_played}'],
 				values=[', '.join(players)],
 				where=f'team_name = "{team_name}"')
 
+		# Update "stats" table
+		update_players_status_in_stats(team_name, players)
+
 	return brow
+
+
+def update_players_status_in_stats(team_name, list_of_players):
+
+	"""
+	:param team_name: str
+	:param list_of_players: list
+	"""
+
+	# First set all players of team as FREE
+	dbf.db_update(
+			table='stats',
+			columns=['status'],
+			values=['FREE'],
+			where=f'status = "{team_name}"')
+
+	# Then update the status
+	for player in list_of_players:
+		dbf.db_update(
+				table='stats',
+				columns=['status'],
+				values=[team_name],
+				where=f'name = "{player}"')
 
 
 def scrape_classifica(brow):
@@ -362,7 +386,6 @@ def scrape_classifica(brow):
 	time.sleep(3)
 
 	dbf.empty_table(table='classifica')
-	dbf.empty_table(table='classifica', database=dbf.dbase2)
 
 	positions = brow.find_elements_by_xpath(
 			'.//table/tbody/tr[contains(@data-logo, ".png")]')
@@ -380,11 +403,6 @@ def scrape_classifica(brow):
 		dbf.db_insert(table='classifica',
 		              columns=columns,
 		              values=team_data)
-
-		dbf.db_insert(table='classifica',
-		              columns=columns,
-		              values=team_data,
-		              database=dbf.dbase2)
 
 	brow.close()
 
@@ -419,7 +437,6 @@ def scrape_roles_and_players_serie_a(brow):
 	            'Fantacalcio_Ruoli_Mantra.xlsx')
 
 	players = open_excel_file(filename, 'all_players_serie_a')
-	os.remove(filename)
 
 	# Create dict where keys are the teams of Serie A and values are lists
 	# containing their players
@@ -458,73 +475,16 @@ def scrape_roles_and_players_serie_a(brow):
 	return brow
 
 
-# def scrape_votes(brow):
-#
-# 	"""
-# 	Download the excel file with the votes day by day and update the db.
-# 	:param brow: selenium browser instance
-#
-# 	"""
-#
-# 	days_played = last_day_played()
-#
-# 	for day in range(1, days_played + 1):
-#
-# 		if wrong_day_to_scrape(brow, day):
-# 			continue
-#
-# 		filename = ('/Users/andrea/Downloads/Voti_Fantacalcio_' +
-# 		            f'Stagione_{YEAR}_Giornata_{day}.xlsx')
-#
-# 		fantagazzetta, statistico, italia = open_excel_file(filename, 'votes')
-# 		os.remove(filename)
-#
-# 		team = None
-# 		for row in range(len(statistico)):
-#
-# 			# Due to the format of the excel, we handle the team in this way
-# 			if statistico.loc[row, 'ATALANTA'] == 'Cod.' and not team:
-# 				team = 'ATALANTA'
-# 				continue
-# 			elif statistico.loc[row, 'ATALANTA'] == 'Cod.' and team:
-# 				continue
-# 			elif type(statistico.loc[row, 'ATALANTA']) == int:
-# 				pass
-# 			else:
-# 				team = statistico.loc[row, 'ATALANTA']
-# 				continue
-#
-# 			# All values
-# 			(_, rl, nm, alvin, gf, gs, rp, rs,
-# 			 rf, au, amm, esp, ass, asf, _, _) = statistico.iloc[row].values
-#
-# 			# Transform '6*' in 'sv'. It means player has no vote
-# 			alvin = 'sv' if type(alvin) == str else alvin
-#
-# 			# Skip the coach
-# 			if rl == 'ALL':
-# 				continue
-#
-# 			# Update db
-# 			dbf.db_insert(
-# 					table='votes',
-# 					columns=['day', 'name', 'team', 'alvin', 'gf', 'gs',
-# 					         'rp', 'rs', 'rf', 'au', 'amm', 'esp', 'ass'],
-# 					values=[day, nm.strip(), team, alvin, gf, gs,
-# 					        rp, rs, rf, au, amm, esp, ass+asf])
-#
-# 		# Update 'fg' votes
-# 		update_other_votes(day, 'fg', fantagazzetta)
-#
-# 		# Update 'italia' votes
-# 		update_other_votes(day, 'italia', italia)
-#
-# 		add_6_politico_if_needed(day)
-#
-# 	return brow
-
-
 def regular_or_from_bench(player):
+
+	"""
+	Set info about playing and substitutions for each player.
+
+	:param player: selenium element
+
+	:return: tuple, (int, int, int)
+
+	"""
 
 	in_out = player.find_elements_by_xpath('.//td/em')
 	attrs = [i.get_attribute('title') for i in in_out]
@@ -568,6 +528,7 @@ def scrape_votes(brow):
 		all_tables = brow.find_elements_by_xpath('.//table[@role="grid"]')
 		for table in all_tables:
 			team = table.find_element_by_xpath('.//span[@class="txtbig"]')
+			scroll_to_element(brow, team)
 			team = team.get_attribute('innerText')
 
 			players = table.find_elements_by_xpath('.//tbody/tr')[:-1]
@@ -849,6 +810,7 @@ def calculate_regular_in_out(player):
 
 	:return: tuple
 	"""
+
 	regular = dbf.db_select(table='votes',
 	                        columns=['regular'],
 	                        where=f'name = "{player}"')
@@ -864,35 +826,104 @@ def calculate_regular_in_out(player):
 	return sum(regular), sum(going_in), sum(going_out)
 
 
-def update_stats_in_market_database():
+def update_stats():
 
 	"""
 	Update database used for market with stats.
 	"""
 
-	names = dbf.db_select(table='players',
-	                      columns=['player_name'],
-	                      database=dbf.dbase2)
+	names_in_stats = dbf.db_select(table='stats',
+	                               columns=['name'],
+	                               database=dbf.dbase1)
 
-	for name in names:
+	filename = ('/Users/andrea/Downloads/Quotazioni_' +
+	            'Fantacalcio_Ruoli_Mantra.xlsx')
+	players = open_excel_file(filename, 'all_players_serie_a')
+
+	for row in range(players.shape[0]):
+		roles, name, team, price = players.iloc[row][['R', 'Nome',
+		                                              'Squadra', 'Qt. A']]
 		matches, mv = calculate_mv(name)
 		bonus = calculate_all_bonus(name)
 		malus = calculate_all_malus(name)
 		mfv = round(mv + (bonus - malus)/matches, 2) if matches else 0
 		regular, going_in, going_out = calculate_regular_in_out(name)
 
-		dbf.db_update(table='stats',
-		              columns=['mv', 'mfv', 'regular', 'going_in', 'going_out'],
-		              values=[mv, mfv, regular, going_in, going_out],
-		              where=f'name = "{name}"',
-		              database=dbf.dbase2)
+		if name in names_in_stats:
+			dbf.db_update(table='stats',
+			              columns=['name', 'team', 'roles', 'mv', 'mfv',
+			                       'regular', 'going_in', 'going_out',
+			                       'price'],
+			              values=[name, team, roles, mv, mfv, regular,
+			                      going_in, going_out, price],
+			              where=f'name = "{name}"',
+			              database=dbf.dbase1)
+		else:
+			print('New name for stats: ', name)
+			dbf.db_insert(table='stats',
+			              columns=['name', 'team', 'roles', 'status', 'mv',
+			                       'mfv', 'regular', 'going_in', 'going_out',
+			                       'price'],
+			              values=[name, team, roles, 'FREE', mv, mfv, regular,
+			                      going_in, going_out, price],
+			              database=dbf.dbase1)
+
+	os.remove(filename)
+
+	# last_day = last_day_played()
+	# teams = dbf.db_select(table='teams', columns=['team_name'])
+	# for team in teams:
+	# 	players = dbf.db_select(
+	# 			table='all_players',
+	# 			columns=[f'day_{last_day}'],
+	# 			where=f'team_name = "{team}"')[0]
+	# 	players = players.split(', ')
+	# 	for player in players:
+	# 		dbf.db_update(
+	# 				table='stats',
+	# 				columns=['status'],
+	# 				values=[team],
+	# 				where=f'name = "{player}"')
+
+
+def update_market_db():
+
+	"""
+	Update the db used for market.
+	"""
+
+	# Update table "classifica"
+	cols = ['team', 'G', 'V', 'N', 'P', 'Gf', 'Gs', 'Dr', 'Pt', 'Tot']
+	dbf.empty_table(table='classifica', database=dbf.dbase2)
+	data = dbf.db_select(table='classifica', columns=cols)
+	for el in data:
+		dbf.db_insert(
+				table='classifica',
+				columns=cols,
+				values=el,
+				database=dbf.dbase2)
+
+	# Update table "players"
+	cols = ['name', 'team', 'roles', 'price', 'status']
+	dbf.empty_table(table='players', database=dbf.dbase2)
+	data = dbf.db_select(
+			table='stats',
+			columns=cols)
+	for el in data:
+		dbf.db_insert(
+				table='players',
+				columns=[f'player_{i}' for i in cols],
+				values=el,
+				database=dbf.dbase2)
 
 
 if __name__ == '__main__':
+
 	browser = scrape_lineups_schemes_points()
 	browser = scrape_allplayers_fantateam(browser)
 	scrape_roles_and_players_serie_a(browser)
 	scrape_votes(browser)
 	scrape_classifica(browser)
 
-	update_stats_in_market_database()
+	update_stats()
+	update_market_db()
