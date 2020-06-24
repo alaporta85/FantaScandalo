@@ -1,8 +1,7 @@
 import db_functions as dbf
 from itertools import combinations, permutations
 from collections import Counter
-
-START_PLAYERS = 10
+from params import *
 
 
 def add_roles(list_of_players):

@@ -1,11 +1,8 @@
-import os
 import random
 import string
 import db_functions as dbf
+from params import *
 from itertools import combinations, zip_longest
-
-ALL_LEAGUES = ('/Users/andrea/Desktop/Cartelle/FantaScandalo/'
-               'All_Leagues_8teams.txt')
 
 
 def generate_schedule(a_round, days):

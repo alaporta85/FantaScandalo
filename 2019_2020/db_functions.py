@@ -2,9 +2,7 @@ import sqlite3
 import numpy as np
 from nltk.metrics.distance import jaccard_distance
 from nltk.util import ngrams
-
-dbase1 = 'fantascandalo_db.db'
-dbase2 = '/Users/andrea/Desktop/Cartelle/Bots/FantAstaBot/fanta_asta_db.db'
+from params import *
 
 
 def empty_table(table, database=dbase1):
