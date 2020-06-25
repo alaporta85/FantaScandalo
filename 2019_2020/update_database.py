@@ -246,6 +246,7 @@ def scrape_lineups_schemes_points():
 						scroll_to_element(brow, player)
 						name = player.find_element_by_xpath(
 							'.//span[@class="player-name ellipsis"]').text
+						name = name.replace('.', '')
 					complete_lineup.append(name)
 
 					try:
@@ -334,6 +335,7 @@ def scrape_allplayers_fantateam(brow):
 		names = shortlist.find_elements_by_xpath('.//td[@data-key="name"]')
 		for player in names:
 			name = player.get_attribute('innerText').upper().strip()
+			name = name.replace('.', '')
 			players.append(name)
 
 		# Update "all_players" table
@@ -443,6 +445,7 @@ def scrape_roles_and_players_serie_a(brow):
 	shortlists = defaultdict(list)
 	for row in range(len(players)):
 		rl, nm, tm = players.loc[row, ['R', 'Nome', 'Squadra']].values
+		nm = nm.replace('.', '')
 		shortlists[tm.upper()].append(nm)
 
 		# Update roles in the db
@@ -539,6 +542,7 @@ def scrape_votes(brow):
 
 				nm = data[0].find_element_by_xpath(
 						'.//a').get_attribute('innerText')
+				nm = nm.replace('.', '')
 				fg = data[1].find_element_by_xpath(
 						'.//span').get_attribute('innerText')
 				color = data[1].find_element_by_xpath(
@@ -843,6 +847,7 @@ def update_stats():
 	for row in range(players.shape[0]):
 		roles, name, team, price = players.iloc[row][['R', 'Nome',
 		                                              'Squadra', 'Qt. A']]
+		name = name.replace('.', '')
 		matches, mv = calculate_mv(name)
 		bonus = calculate_all_bonus(name)
 		malus = calculate_all_malus(name)
