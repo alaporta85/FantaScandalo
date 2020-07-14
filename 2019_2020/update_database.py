@@ -425,14 +425,14 @@ def scrape_roles_and_players_serie_a(brow):
 	already_in_db = dbf.db_select(table='roles', columns=['name'])
 
 	# Download excel file with the data
-	url = 'https://www.fantacalcio.it/quotazioni-fantacalcio/mantra'
-	brow.get(url)
-	close_popup(brow)
-	time.sleep(3)
-	button = './/button[@id="toexcel"]'
-	wait_visible(brow, WAIT, button)
-	brow.find_element_by_xpath(button).click()
-	time.sleep(2)
+	# url = 'https://www.fantacalcio.it/quotazioni-fantacalcio/mantra'
+	# brow.get(url)
+	# close_popup(brow)
+	# time.sleep(3)
+	# button = './/button[@id="toexcel"]'
+	# wait_visible(brow, WAIT, button)
+	# brow.find_element_by_xpath(button).click()
+	# time.sleep(2)
 
 	# Load file and remove it from local
 	filename = ('/Users/andrea/Downloads/Quotazioni_' +
