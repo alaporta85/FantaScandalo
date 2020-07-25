@@ -347,7 +347,8 @@ def mantra(day, fantateam, starting_players, source, roles, save_lineup=True):
 			return [pl for pl, rl in result], new_scheme, n_malus
 
 	# In case no adapted solution is found, repeat with less players
-	return mantra(day, fantateam, starting_players-1, source, roles)
+	return mantra(day, fantateam, starting_players-1,
+	              source, roles, save_lineup)
 
 
 def player_vote(day, player_name, source):
@@ -939,9 +940,8 @@ def predict_lineup(fantateam, players_out, day, lineup=None, scheme=None):
 if __name__ == '__main__':
 
 	predict_lineup(fantateam='picchia',
-	               players_out=['de ligt', 'bastoni', 'malinovsky', 'muriel',
-	                            'sanchez', 'mario rui'],
-	               day=24,
+	               players_out=['hateboer', 'de ligt'],
+	               day=35,
 	               # lineup=['ospina',
 	               #         'koulou', 'bonucci', 'toloi',
 	               #         'biraghi', 'brozo', 'bonaventura', 'lazzari',
