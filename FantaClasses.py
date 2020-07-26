@@ -14,13 +14,12 @@ class Player(object):
 	def __init__(self, name):
 		self.name = name
 
-	def vote(self, day, source):
+	def vote(self, day):
 
 		"""
 		Return player vote if any, else 'sv'.
 
 		:param day: int
-		:param source: str
 
 		:return: int or str
 
@@ -28,7 +27,7 @@ class Player(object):
 
 		vote = dbf.db_select(
 				table='votes',
-				columns=[source],
+				columns=['alvin'],
 				where=f'day={day} AND name="{self.name}"')
 
 		if vote:
@@ -78,19 +77,18 @@ class Player(object):
 
 		return sum(np.multiply(points, values))
 
-	def fantavote(self, day, source):
+	def fantavote(self, day):
 
 		"""
 		Return the fantavote of the player.
 
 		:param day: int
-		:param source: str
 
 		:return: float
 
 		"""
 
-		return self.vote(day, source) + self.bonus(day) - self.malus(day)
+		return self.vote(day) + self.bonus(day) - self.malus(day)
 
 
 class Fantateam(object):
@@ -108,7 +106,6 @@ class Fantateam(object):
 		self.malus = 0
 		self.half_point = 0
 		self.matches_in_ten = 0
-		self.matches_in_nine = 0
 		self.onezero = 0
 		self.one_goal_win = 0
 		self.one_goal_lose = 0
@@ -120,8 +117,7 @@ class Fantateam(object):
 class Match(object):
 
 	def __init__(self, team1, team2, day, all_players,
-	             captain, captain_details, rfactor, rfactor_details,
-	             source):
+	             captain, captain_details, rfactor, rfactor_details):
 
 		"""
 		:param team1: Fantateam() instance
@@ -132,7 +128,6 @@ class Match(object):
 		:param captain_details: dict
 		:param rfactor: bool
 		:param rfactor_details: dict
-		:param source: str, Options: alvin, italia, fg
 
 		"""
 		self.team1 = team1
@@ -143,7 +138,6 @@ class Match(object):
 		self.captain_details = captain_details
 		self.rfactor = rfactor
 		self.rfactor_details = rfactor_details
-		self.source = source
 		self.result = None
 
 		self.play_match()
@@ -190,12 +184,10 @@ class Match(object):
 			lineup1, _, malus1 = mf.mantra(day=self.day,
 			                               fantateam=self.team1.name,
 			                               starting_players=mf.START_PLAYERS,
-			                               source=self.source,
 			                               roles=False)
 			lineup2, _, malus2 = mf.mantra(day=self.day,
 			                               fantateam=self.team2.name,
 			                               starting_players=mf.START_PLAYERS,
-			                               source=self.source,
 			                               roles=False)
 
 		self.update_fantateams_data(lineup1, lineup2, malus1, malus2)
@@ -214,9 +206,9 @@ class Match(object):
 
 		"""
 
-		votes1 = [self.all_players[pl].fantavote(self.day, self.source)
+		votes1 = [self.all_players[pl].fantavote(self.day)
 		          for pl in lineup1]
-		votes2 = [self.all_players[pl].fantavote(self.day, self.source)
+		votes2 = [self.all_players[pl].fantavote(self.day)
 		          for pl in lineup2]
 
 		abs_points1 = sum(votes1) - malus1
@@ -225,14 +217,14 @@ class Match(object):
 		captain1 = captain_points(self.captain, self.team1.name, lineup1,
 		                          self.day, self.captain_details)
 		rfactor1 = rfactor_points(self.rfactor, self.rfactor_details, lineup1,
-		                          self.day, self.source)
+		                          self.day)
 		self.team1.captain_bonus_malus_balance += captain1
 		self.team1.rfactor_bonus_malus_balance += rfactor1
 
 		captain2 = captain_points(self.captain, self.team2.name, lineup2,
 		                          self.day, self.captain_details)
 		rfactor2 = rfactor_points(self.rfactor, self.rfactor_details, lineup2,
-		                          self.day, self.source)
+		                          self.day)
 		self.team2.captain_bonus_malus_balance += captain2
 		self.team2.rfactor_bonus_malus_balance += rfactor2
 
@@ -275,13 +267,9 @@ class Match(object):
 
 		if len(lineup1) == 10:
 			self.team1.matches_in_ten += 1
-		elif len(lineup1) == 9:
-			self.team1.matches_in_nine += 1
 
 		if len(lineup2) == 10:
 			self.team2.matches_in_ten += 1
-		elif len(lineup2) == 9:
-			self.team2.matches_in_nine += 1
 
 		if goals1 + goals2 == 1 and goals1:
 			self.team1.onezero += 1
@@ -346,7 +334,7 @@ class Match(object):
 class League(object):
 
 	def __init__(self, fteams, a_round, n_days, all_players,
-	             captain, rfactor, source):
+	             captain, rfactor):
 		"""
 		:param fteams: list, Ex [Ciolle United, FC STRESS, ...]
 		:param a_round: list
@@ -354,7 +342,6 @@ class League(object):
 		:param all_players: dict, Ex: player_name: Player() instance
 		:param captain: bool
 		:param rfactor: bool
-		:param source: str
 
 		"""
 		self.fteams = {ft: Fantateam(ft) for ft in fteams}
@@ -367,7 +354,6 @@ class League(object):
 		self.rfactor = rfactor
 		self.rfactor_details = dict(dbf.db_select(table='rfactor_details',
 		                                          columns='*'))
-		self.source = source
 		self.schedule = ef.generate_schedule(a_round, self.n_days)
 		self.matches = []
 
@@ -388,8 +374,7 @@ class League(object):
 				team1, team2 = match.split(' - ')
 				m = Match(self.fteams[team1], self.fteams[team2], day,
 				          self.all_players, self.captain, self.captain_details,
-				          self.rfactor, self.rfactor_details,
-				          self.source)
+				          self.rfactor, self.rfactor_details)
 
 				self.matches.append(m)
 
@@ -509,16 +494,14 @@ class League(object):
 		              n_days=self.n_days,
 		              all_players=self.all_players,
 		              captain=True,
-		              rfactor=False,
-		              source=self.source)
+		              rfactor=False)
 
 		lg_rf = League(fteams={ft: Fantateam(ft) for ft in self.fteams},
 		               a_round=self.a_round,
 		               n_days=self.n_days,
 		               all_players=self.all_players,
 		               captain=False,
-		               rfactor=True,
-		               source=self.source)
+		               rfactor=True)
 
 		data_c = {ft:
 			         f'{self.fteams[ft].captain_bonus_malus_balance} '
@@ -537,7 +520,6 @@ class League(object):
 		             self.fteams[ft].malus,
 		             self.fteams[ft].half_point,
 		             self.fteams[ft].matches_in_ten,
-		             self.fteams[ft].matches_in_nine,
 		             self.fteams[ft].onezero,
 		             self.fteams[ft].one_goal_win,
 		             self.fteams[ft].one_goal_lose,
@@ -546,7 +528,7 @@ class League(object):
 		             data_rf[ft]) for ft in self.ranking}
 
 		cols = ['M Pt', 'M Tot Pt', 's+', 's-', 'Malus', '1/2',
-		        'In 10', 'In 9', '1-0', '+1 Gol', '-1 Gol', '< 66', 'C', 'RF']
+		        'In 10', '1-0', '+1 Gol', '-1 Gol', '< 66', 'C', 'RF']
 		df = pd.DataFrame.from_dict(data, orient='index', columns=cols)
 
 		return df.style.set_properties(**{'width': '60px'})
@@ -603,7 +585,7 @@ class League(object):
 				new_teams = {ft: Fantateam(ft) for ft in self.fteams}
 
 				new_lg = FastLeague(new_teams, abs_points, new_round,
-				                    self.n_days, self.source)
+				                    self.n_days)
 
 				idx1 = np.argwhere(new_lg.ranking[0] == tm1).flatten()
 				idx2 = np.argwhere(new_lg.ranking[0] == tm2).flatten()
@@ -633,14 +615,13 @@ class FastFantateam(object):
 
 class FastMatch(object):
 
-	def __init__(self, team1, team2, day, abs_points, source):
+	def __init__(self, team1, team2, day, abs_points):
 
 		self.team1 = team1
 		self.team2 = team2
 		self.day = day
 		self.abs_points1 = abs_points[self.team1.name][self.day - 1]
 		self.abs_points2 = abs_points[self.team2.name][self.day - 1]
-		self.source = source
 
 		self.update_fantateams_data(self.abs_points1, self.abs_points2)
 
@@ -675,12 +656,11 @@ class FastMatch(object):
 
 class FastLeague(object):
 
-	def __init__(self, fteams, abs_points, a_round, n_days, source):
+	def __init__(self, fteams, abs_points, a_round, n_days):
 
 		self.fteams = {ft: FastFantateam(ft) for ft in fteams}
 		self.abs_points = abs_points
 		self.a_round = a_round
-		self.source = source
 		self.schedule = ef.generate_schedule(a_round, n_days)
 
 		self.play_league()
@@ -698,7 +678,7 @@ class FastLeague(object):
 		for day, matches in enumerate(self.schedule, 1):
 			for team1, team2 in matches:
 				FastMatch(self.fteams[team1], self.fteams[team2], day,
-				          self.abs_points, self.source)
+				          self.abs_points)
 
 	def create_ranking(self, days):
 
@@ -745,21 +725,20 @@ class Calendar(object):
 		self.avg = {team: 0 for team in fteams}
 		self.verbose = verbose
 
-		self.simulation(fteams, n_days, source='alvin')
+		self.simulation(fteams, n_days)
 		for pos in self.archive:
 			for team in self.archive[pos]:
 				self.archive[pos][team].sort(key=lambda x: x[0], reverse=True)
 				self.archive[pos][team] = [rn for pt, rn in self.archive[pos][team]]
 		self.stats = self.stats(fteams)
 
-	def simulation(self, teams, n_days, source):
+	def simulation(self, teams, n_days):
 
 		"""
 		Play all the random leagues and update the attributes.
 
 		:param teams: list, Ex ['Ciolle United', 'FC STRESS', 'Bucalina',...]
 		:param n_days: int
-		:param source: str
 
 		:return: nothing
 
@@ -767,7 +746,7 @@ class Calendar(object):
 
 		for i, a_round in enumerate(self.rounds, 1):
 
-			fl = FastLeague(teams, self.abs_points, a_round, n_days, source)
+			fl = FastLeague(teams, self.abs_points, a_round, n_days)
 
 			names, points = fl.ranking
 
@@ -883,8 +862,7 @@ class Calendar(object):
 		                n_days=DAYS,
 		                all_players=players,
 		                captain=True,
-		                rfactor=True,
-		                source='alvin')
+		                rfactor=True)
 			display(sp.create_ranking(double_check=False))
 			display(df.style.set_properties(**{'width': '50px'}))
 
@@ -1028,16 +1006,16 @@ def captain_points(captain_true_false, fantateam_name, lineup,
 	captain, vice = text.split(', ')
 
 	if captain in lineup:
-		vote = players[captain].vote(day, source='alvin')
+		vote = players[captain].vote(day)
 	elif vice in lineup:
-		vote = players[vice].vote(day, source='alvin')
+		vote = players[vice].vote(day)
 	else:
 		vote = 'sv'
 
 	return captain_details[vote]
 
 
-def rfactor_points(rfac_true_false, rfac_details, lineup, day, source):
+def rfactor_points(rfac_true_false, rfac_details, lineup, day):
 
 	"""
 	Return the bonus/malus points associated with the R-factor.
@@ -1046,7 +1024,6 @@ def rfactor_points(rfac_true_false, rfac_details, lineup, day, source):
 	:param rfac_details: dict
 	:param lineup: list
 	:param day: int
-	:param source: str
 
 	:return: float
 
@@ -1055,7 +1032,7 @@ def rfactor_points(rfac_true_false, rfac_details, lineup, day, source):
 	if not rfac_true_false:
 		return 0
 
-	list_of_votes = [players[i].vote(day, source) for i in lineup]
+	list_of_votes = [players[i].vote(day) for i in lineup]
 	n_suff = sum([1 for vote in list_of_votes if vote >= 6])
 	return rfac_details[n_suff]
 
@@ -1112,7 +1089,6 @@ print(f'Giornate disputate: {DAYS}')
 #             n_days=DAYS,
 #             all_players=players,
 #             captain=True,
-#             rfactor=True,
-#             source='alvin')
+#             rfactor=True)
 #
 # lg.create_ranking(double_check=True)

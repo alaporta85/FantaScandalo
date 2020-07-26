@@ -197,20 +197,19 @@ def create_schemes_candidates(roles, players_needed):
 	return [[rl for _, rl in comb] for comb in combs if comb_is_valid(comb)]
 
 
-def filter_players_without_vote(day, players, source):
+def filter_players_without_vote(day, players):
 
 	"""
 	Return the list players after removing the ones without vote on that day.
 
 	:param day: int
 	:param players: list of str
-	:param source: str
 
 	:return: list of str
 
 	"""
 
-	return [pl for pl in players if player_vote(day, pl, source) != 'sv']
+	return [pl for pl in players if player_vote(day, pl) != 'sv']
 
 
 def flatten_dict(counter_dict):
@@ -255,7 +254,7 @@ def deploy_goalkeeper(gkeep_field, gkeep_bench):
 	return gkeep, max_subst
 
 
-def mantra(day, fantateam, starting_players, source, roles, save_lineup=True):
+def mantra(day, fantateam, starting_players, roles, save_lineup=True):
 
 	"""
 	Find the valid lineup of the day.
@@ -263,7 +262,6 @@ def mantra(day, fantateam, starting_players, source, roles, save_lineup=True):
 	:param day: int
 	:param fantateam: str
 	:param starting_players: int
-	:param source: str
 	:param roles: bool, if False return only the names of the players
 	:param save_lineup: bool
 
@@ -275,8 +273,8 @@ def mantra(day, fantateam, starting_players, source, roles, save_lineup=True):
 	field, bench = select_lineup(day, fantateam)
 
 	# Keep only players with vote
-	field_with_vote = filter_players_without_vote(day, field, source)
-	bench_with_vote = filter_players_without_vote(day, bench, source)
+	field_with_vote = filter_players_without_vote(day, field)
+	bench_with_vote = filter_players_without_vote(day, bench)
 
 	# Extract goal-keepers from field and bench
 	gkeep_field, field_with_roles = add_roles(field_with_vote)
@@ -347,25 +345,23 @@ def mantra(day, fantateam, starting_players, source, roles, save_lineup=True):
 			return [pl for pl, rl in result], new_scheme, n_malus
 
 	# In case no adapted solution is found, repeat with less players
-	return mantra(day, fantateam, starting_players-1,
-	              source, roles, save_lineup)
+	return mantra(day, fantateam, starting_players-1, roles, save_lineup)
 
 
-def player_vote(day, player_name, source):
+def player_vote(day, player_name):
 
 	"""
 	Return player's vote of the day.
 
 	:param day: int
 	:param player_name: str
-	:param source: str, Ex. 'alvin' or 'fg' or 'italia'
 	:return:
 
 	"""
 
 	vote = dbf.db_select(
 		    table='votes',
-            columns=[source],
+            columns=['alvin'],
             where=f'day={day} AND name="{player_name}"')
 
 	return vote[0] if vote else 'sv'
@@ -910,7 +906,6 @@ def predict_lineup(fantateam, players_out, day, lineup=None, scheme=None):
 	predicted = mantra(day=day,
 	                   fantateam=fantateam,
 	                   starting_players=START_PLAYERS,
-	                   source='alvin',
 	                   roles=True,
 	                   save_lineup=False)
 
