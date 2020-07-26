@@ -102,40 +102,23 @@ def last_day_played():
 		return len(list_of_abs_points)
 
 
-def open_excel_file(filename, data_to_scrape):
+def open_excel_file(filename):
 
 	"""
 	Try opening the file until found.
 
 	:param filename: str, path of the file to open
-	:param data_to_scrape: str, it can be 'votes' or 'all_players_serie_a'
 
 	"""
 
 	while True:
 
-		if data_to_scrape == 'votes':
-			try:
-				fantagazzetta = pd.read_excel(filename,
-				                              sheet_name='Fantacalcio',
-				                              header=4)
-				statistico = pd.read_excel(filename,
-				                           sheet_name='Statistico',
-				                           header=4)
-				italia = pd.read_excel(filename,
-				                       sheet_name='Italia',
-				                       header=4)
-				return fantagazzetta, statistico, italia
-			except FileNotFoundError:
-				continue
-
-		else:
-			try:
-				players = pd.read_excel(filename, sheet_name='Tutti',
-				                        header=1)
-				return players
-			except FileNotFoundError:
-				continue
+		try:
+			players = pd.read_excel(filename, sheet_name='Tutti',
+			                        header=1)
+			return players
+		except FileNotFoundError:
+			continue
 
 
 def manage_adblock():
@@ -438,7 +421,7 @@ def scrape_roles_and_players_serie_a(brow):
 	filename = ('/Users/andrea/Downloads/Quotazioni_' +
 	            'Fantacalcio_Ruoli_Mantra.xlsx')
 
-	players = open_excel_file(filename, 'all_players_serie_a')
+	players = open_excel_file(filename)
 
 	# Create dict where keys are the teams of Serie A and values are lists
 	# containing their players
@@ -543,14 +526,6 @@ def scrape_votes(brow):
 				nm = data[0].find_element_by_xpath(
 						'.//a').get_attribute('innerText')
 				nm = nm.replace('.', '')
-				fg = data[1].find_element_by_xpath(
-						'.//span').get_attribute('innerText')
-				color = data[1].find_element_by_xpath(
-						'.//span').get_attribute('class')
-				if 'grey' in color:
-					fg = 'sv'
-				else:
-					fg = float(fg.replace(',', '.'))
 				alvin = data[3].find_element_by_xpath(
 						'.//span').get_attribute('innerText')
 				color = data[3].find_element_by_xpath(
@@ -572,14 +547,7 @@ def scrape_votes(brow):
 					esp = 1
 				except NoSuchElementException:
 					esp = 0
-				it = data[5].find_element_by_xpath(
-						'.//span').get_attribute('innerText')
-				color = data[5].find_element_by_xpath(
-						'.//span').get_attribute('class')
-				if 'grey' in color:
-					it = 'sv'
-				else:
-					it = float(it.replace(',', '.'))
+
 				try:
 					gf = data[7].find_element_by_xpath(
 							'.//span').get_attribute('innerText')
@@ -623,13 +591,14 @@ def scrape_votes(brow):
 				# Update db
 				dbf.db_insert(
 						table='votes',
-						columns=['day', 'name', 'team', 'fg', 'alvin', 'italia',
+						columns=['day', 'name', 'team', 'alvin',
 						         'gf', 'gs', 'rp', 'rs', 'rf', 'au', 'amm',
 						         'esp', 'ass', 'regular', 'going_in',
 						         'going_out'],
-						values=[day, nm.strip(), team, fg, alvin, it, gf, gs,
-						        rp, rs, rf, au, amm, esp, ass,
-						        regular, going_in, going_out])
+						values=[day, nm.strip(), team, alvin,
+						        gf, gs, rp, rs, rf, au, amm,
+						        esp, ass, regular, going_in,
+						        going_out])
 
 		add_6_politico_if_needed(day)
 	return brow
@@ -646,31 +615,6 @@ def scroll_to_element(brow, element, position='{block: "center"}'):
 	brow.execute_script(
 			f'return arguments[0].scrollIntoView({position});',
 			element)
-
-
-def update_other_votes(day, column, dataset):
-
-	"""
-	Update the columns 'fg' and 'italia' in the db.
-
-	:param day: int
-	:param column: str, 'fg' or 'italia'
-	:param dataset: dataframe
-
-	"""
-
-	for j in range(len(dataset)):
-		_, _, nm, vote = dataset.iloc[j].values[:4]
-
-		if type(nm) != str:
-			continue
-
-		vote = 'sv' if type(vote) == str else vote
-		dbf.db_update(
-				table='votes',
-				columns=[column],
-				values=[vote],
-				where=f'day={day} AND name = "{nm}"')
 
 
 def wait_clickable(brow, seconds, element):
@@ -842,7 +786,7 @@ def update_stats():
 
 	filename = ('/Users/andrea/Downloads/Quotazioni_' +
 	            'Fantacalcio_Ruoli_Mantra.xlsx')
-	players = open_excel_file(filename, 'all_players_serie_a')
+	players = open_excel_file(filename)
 
 	for row in range(players.shape[0]):
 		roles, name, team, price = players.iloc[row][['R', 'Nome',
@@ -874,21 +818,6 @@ def update_stats():
 			              database=dbf.dbase1)
 
 	os.remove(filename)
-
-	# last_day = last_day_played()
-	# teams = dbf.db_select(table='teams', columns=['team_name'])
-	# for team in teams:
-	# 	players = dbf.db_select(
-	# 			table='all_players',
-	# 			columns=[f'day_{last_day}'],
-	# 			where=f'team_name = "{team}"')[0]
-	# 	players = players.split(', ')
-	# 	for player in players:
-	# 		dbf.db_update(
-	# 				table='stats',
-	# 				columns=['status'],
-	# 				values=[team],
-	# 				where=f'name = "{player}"')
 
 
 def update_market_db():
