@@ -1,7 +1,8 @@
+import os
 import random
 import string
 import db_functions as dbf
-from params import *
+import config as cfg
 from itertools import combinations, zip_longest
 
 
@@ -122,7 +123,7 @@ def all_leagues_generator_txt(n_teams):
 	all_valid_days = [day for day in all_days if no_repeated_teams(day, teams)]
 
 	a_round = []
-	myfile = open(ALL_LEAGUES, 'w')
+	myfile = open(cfg.ALL_LEAGUES, 'w')
 	recursive_rounds(a_round, all_valid_days)
 	myfile.close()
 
@@ -198,7 +199,7 @@ def random_rounds(number):
 
 	res = []
 	for x in range(number):
-		line = get_random_line(ALL_LEAGUES)
+		line = get_random_line(cfg.ALL_LEAGUES)
 		real_round = real_round_from_line(line)
 		res.append(real_round)
 

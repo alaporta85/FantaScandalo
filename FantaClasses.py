@@ -183,11 +183,11 @@ class Match(object):
 		except IndexError:
 			lineup1, _, malus1 = mf.mantra(day=self.day,
 			                               fantateam=self.team1.name,
-			                               starting_players=mf.START_PLAYERS,
+			                               starting_players=10,
 			                               roles=False)
 			lineup2, _, malus2 = mf.mantra(day=self.day,
 			                               fantateam=self.team2.name,
-			                               starting_players=mf.START_PLAYERS,
+			                               starting_players=10,
 			                               roles=False)
 
 		self.update_fantateams_data(lineup1, lineup2, malus1, malus2)

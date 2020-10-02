@@ -1,6 +1,7 @@
 import os
 import time
 import db_functions as dbf
+import config as cfg
 import pandas as pd
 from collections import defaultdict
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
@@ -8,11 +9,6 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as ec
 from selenium.webdriver.common.by import By
 from selenium import webdriver
-
-CHROME_PATH = os.getcwd() + '/chromedriver'
-WAIT = 10
-YEAR = '2019-20'
-BASE_URL = 'https://leghe.fantacalcio.it/fantascandalo/'
 
 
 def add_6_politico_if_needed(day):
@@ -73,10 +69,10 @@ def close_popup(brow):
 
 	"""
 
-	accetto = './/button[@class="qc-cmp-button"]'
+	accetto = './/button[@class="sc-bwzfXH jlyVur"]'
 
 	try:
-		wait_clickable(brow, WAIT, accetto)
+		wait_clickable(brow, cfg.WAIT, accetto)
 		brow.find_element_by_xpath(accetto).click()
 	except TimeoutException:
 		pass
@@ -134,7 +130,7 @@ def manage_adblock():
 	chop = webdriver.ChromeOptions()
 	chop.add_extension('AdBlock_v3.34.0.crx')
 	chop.add_argument("--disable-infobars")
-	brow = webdriver.Chrome(CHROME_PATH, chrome_options=chop)
+	brow = webdriver.Chrome(cfg.CHROME_PATH, chrome_options=chop)
 	time.sleep(10)
 
 	handles = brow.window_handles
@@ -164,7 +160,7 @@ def scrape_lineups_schemes_points():
 	starting_day = last_day_played() + 1
 	for day in range(starting_day, 36):
 
-		brow.get(f'{BASE_URL}formazioni/{day}')
+		brow.get(f'{cfg.BASE_URL}formazioni/{day}')
 
 		if first2scrape:
 			close_popup(brow)
@@ -173,7 +169,7 @@ def scrape_lineups_schemes_points():
 
 		# The actual day of the league. We need it to know when stop scraping
 		real_day = './/div[@class="filter-option-inner-inner"]'
-		wait_visible(brow, WAIT, real_day)
+		wait_visible(brow, cfg.WAIT, real_day)
 		real_day = int(brow.find_element_by_xpath(real_day).text.split('°')[0])
 		if day != real_day:
 			break
@@ -295,11 +291,11 @@ def scrape_allplayers_fantateam(brow):
 	days_played = last_day_played()
 
 	# Go the webpage
-	brow.get(f'{BASE_URL}rose')
+	brow.get(f'{cfg.BASE_URL}rose')
 
 	# Wait for this element to be visible
 	check = './/h4[@class="has-select clearfix public-heading"]'
-	wait_visible(brow, WAIT, check)
+	wait_visible(brow, cfg.WAIT, check)
 
 	# Find all the tables containing the shortlists
 	shortlists = ('.//li[contains(@class,'
@@ -367,7 +363,7 @@ def scrape_classifica(brow):
 
 	"""
 
-	brow.get(f'{BASE_URL}classifica')
+	brow.get(f'{cfg.BASE_URL}classifica')
 	time.sleep(3)
 
 	dbf.empty_table(table='classifica')
@@ -472,7 +468,7 @@ def regular_or_from_bench(player):
 
 	"""
 
-	in_out = player.find_elements_by_xpath('.//td/em')
+	in_out = player.find_elements_by_xpath('.//td//em')
 	attrs = [i.get_attribute('title') for i in in_out]
 
 	regular = 0
@@ -501,7 +497,7 @@ def scrape_votes(brow):
 	"""
 
 	days_played = last_day_played()
-	main_url = f'https://www.fantacalcio.it/voti-fantacalcio-serie-a/{YEAR}/'
+	main_url = f'https://www.fantacalcio.it/voti-fantacalcio-serie-a/{cfg.YEAR}/'
 
 	for day in range(1, days_played + 1):
 
@@ -513,7 +509,8 @@ def scrape_votes(brow):
 
 		all_tables = brow.find_elements_by_xpath('.//table[@role="grid"]')
 		for table in all_tables:
-			team = table.find_element_by_xpath('.//span[@class="txtbig"]')
+			# team = table.find_element_by_xpath('.//span[@class="txtbig"]')
+			team = table.find_element_by_xpath('.//th[@class="team-header"]')
 			scroll_to_element(brow, team)
 			team = team.get_attribute('innerText')
 
@@ -526,9 +523,9 @@ def scrape_votes(brow):
 				nm = data[0].find_element_by_xpath(
 						'.//a').get_attribute('innerText')
 				nm = nm.replace('.', '')
-				alvin = data[3].find_element_by_xpath(
+				alvin = data[2].find_element_by_xpath(
 						'.//span').get_attribute('innerText')
-				color = data[3].find_element_by_xpath(
+				color = data[2].find_element_by_xpath(
 						'.//span').get_attribute('class')
 				if 'grey' in color:
 					alvin = 'sv'
@@ -536,50 +533,50 @@ def scrape_votes(brow):
 				else:
 					alvin = float(alvin.replace(',', '.'))
 				try:
-					data[3].find_element_by_xpath(
+					data[2].find_element_by_xpath(
 							'.//span[contains(@class, "trn-r trn-ry absort")]')
 					amm = 1
 				except NoSuchElementException:
 					amm = 0
 				try:
-					data[3].find_element_by_xpath(
+					data[2].find_element_by_xpath(
 							'.//span[contains(@class, "trn-r trn-rr absort")]')
 					esp = 1
 				except NoSuchElementException:
 					esp = 0
 
 				try:
-					gf = data[7].find_element_by_xpath(
+					gf = data[6].find_element_by_xpath(
 							'.//span').get_attribute('innerText')
 				except NoSuchElementException:
 					gf = 0
 				try:
-					rf = data[8].find_element_by_xpath(
+					rf = data[7].find_element_by_xpath(
 							'.//span').get_attribute('innerText')
 				except NoSuchElementException:
 					rf = 0
 				try:
-					gs = data[9].find_element_by_xpath(
+					gs = data[8].find_element_by_xpath(
 							'.//span').get_attribute('innerText')
 				except NoSuchElementException:
 					gs = 0
 				try:
-					rp = data[10].find_element_by_xpath(
+					rp = data[9].find_element_by_xpath(
 							'.//span').get_attribute('innerText')
 				except NoSuchElementException:
 					rp = 0
 				try:
-					rs = data[11].find_element_by_xpath(
+					rs = data[10].find_element_by_xpath(
 							'.//span').get_attribute('innerText')
 				except NoSuchElementException:
 					rs = 0
 				try:
-					au = data[12].find_element_by_xpath(
+					au = data[11].find_element_by_xpath(
 							'.//span').get_attribute('innerText')
 				except NoSuchElementException:
 					au = 0
 				try:
-					ass = data[13].find_element_by_xpath(
+					ass = data[12].find_element_by_xpath(
 							'.//span').get_attribute('innerText')
 					if len(ass) == 1:
 						ass = int(ass)
@@ -595,7 +592,7 @@ def scrape_votes(brow):
 						         'gf', 'gs', 'rp', 'rs', 'rf', 'au', 'amm',
 						         'esp', 'ass', 'regular', 'going_in',
 						         'going_out'],
-						values=[day, nm.strip(), team, alvin,
+						values=[day, nm.strip().upper(), team, alvin,
 						        gf, gs, rp, rs, rf, au, amm,
 						        esp, ass, regular, going_in,
 						        going_out])
@@ -808,7 +805,7 @@ def update_stats():
 			              where=f'name = "{name}"',
 			              database=dbf.dbase1)
 		else:
-			print('New name for stats: ', name)
+			# print('New name for stats: ', name)
 			dbf.db_insert(table='stats',
 			              columns=['name', 'team', 'roles', 'status', 'mv',
 			                       'mfv', 'regular', 'going_in', 'going_out',

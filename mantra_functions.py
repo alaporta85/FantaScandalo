@@ -1,7 +1,6 @@
 import db_functions as dbf
 from itertools import combinations, permutations
 from collections import Counter
-from params import *
 
 
 def add_roles(list_of_players):
@@ -905,7 +904,7 @@ def predict_lineup(fantateam, players_out, day, lineup=None, scheme=None):
 	# Predict lineup
 	predicted = mantra(day=day,
 	                   fantateam=fantateam,
-	                   starting_players=START_PLAYERS,
+	                   starting_players=10,
 	                   roles=True,
 	                   save_lineup=False)
 
