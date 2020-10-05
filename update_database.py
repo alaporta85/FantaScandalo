@@ -32,7 +32,7 @@ def add_6_politico_if_needed(day):
 
 	votes_of_day = dbf.db_select(
 			table='votes',
-			columns=['day', 'name', 'team', 'fg', 'alvin', 'italia', 'gf',
+			columns=['day', 'name', 'team', 'alvin', 'gf',
 			         'gs', 'rp', 'rs', 'rf', 'au', 'amm', 'esp', 'ass',
 			         'regular', 'going_in', 'going_out'],
 			where=f'day = {day}')
@@ -40,12 +40,12 @@ def add_6_politico_if_needed(day):
 	for team in missing:
 		shortlist = dbf.db_select(
 				table='all_players_serie_a',
-				columns=['day_{}'.format(day)],
+				columns=[f'day_{day}'],
 				where=f'team = "{team}"')[0]
 		shortlist = shortlist.split(', ')
 
 		for nm in shortlist:
-			data = (day, nm, team, 6, 6, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+			data = (day, nm, team, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 			votes_of_day.append(data)
 
 	votes_of_day.sort(key=lambda x: x[2])
@@ -54,7 +54,7 @@ def add_6_politico_if_needed(day):
 	for row in votes_of_day:
 		dbf.db_insert(
 				table='votes',
-				columns=['day', 'name', 'team', 'fg', 'alvin', 'italia',
+				columns=['day', 'name', 'team', 'alvin',
 				         'gf', 'gs', 'rp', 'rs', 'rf', 'au', 'amm',
 				         'esp', 'ass', 'regular', 'going_in', 'going_out'],
 				values=[value for value in row])
@@ -778,8 +778,7 @@ def update_stats():
 	"""
 
 	names_in_stats = dbf.db_select(table='stats',
-	                               columns=['name'],
-	                               database=dbf.dbase1)
+	                               columns=['name'])
 
 	filename = ('/Users/andrea/Downloads/Quotazioni_' +
 	            'Fantacalcio_Ruoli_Mantra.xlsx')
@@ -802,8 +801,7 @@ def update_stats():
 			                       'price'],
 			              values=[name, team, roles, mv, mfv, regular,
 			                      going_in, going_out, price],
-			              where=f'name = "{name}"',
-			              database=dbf.dbase1)
+			              where=f'name = "{name}"')
 		else:
 			# print('New name for stats: ', name)
 			dbf.db_insert(table='stats',
@@ -811,8 +809,7 @@ def update_stats():
 			                       'mfv', 'regular', 'going_in', 'going_out',
 			                       'price'],
 			              values=[name, team, roles, 'FREE', mv, mfv, regular,
-			                      going_in, going_out, price],
-			              database=dbf.dbase1)
+			                      going_in, going_out, price])
 
 	os.remove(filename)
 
@@ -825,18 +822,18 @@ def update_market_db():
 
 	# Update table "classifica"
 	cols = ['team', 'G', 'V', 'N', 'P', 'Gf', 'Gs', 'Dr', 'Pt', 'Tot']
-	dbf.empty_table(table='classifica', database=dbf.dbase2)
+	dbf.empty_table(table='classifica', database=cfg.dbase2)
 	data = dbf.db_select(table='classifica', columns=cols)
 	for el in data:
 		dbf.db_insert(
 				table='classifica',
 				columns=cols,
 				values=el,
-				database=dbf.dbase2)
+				database=cfg.dbase2)
 
 	# Update table "players"
 	cols = ['name', 'team', 'roles', 'price', 'status']
-	dbf.empty_table(table='players', database=dbf.dbase2)
+	dbf.empty_table(table='players', database=cfg.dbase2)
 	data = dbf.db_select(
 			table='stats',
 			columns=cols)
@@ -845,7 +842,7 @@ def update_market_db():
 				table='players',
 				columns=[f'player_{i}' for i in cols],
 				values=el,
-				database=dbf.dbase2)
+				database=cfg.dbase2)
 
 
 if __name__ == '__main__':

@@ -2,10 +2,10 @@ import sqlite3
 import numpy as np
 from nltk.metrics.distance import jaccard_distance
 from nltk.util import ngrams
-from params import *
+import config as cfg
 
 
-def empty_table(table, database=dbase1):
+def empty_table(table, database=cfg.dbase1):
 
     """
     Delete everything from table.
@@ -24,7 +24,7 @@ def empty_table(table, database=dbase1):
     db.close()
 
 
-def db_delete(table, where, database=dbase1):
+def db_delete(table, where, database=cfg.dbase1):
 
     """
     Remove entry from database.
@@ -44,7 +44,7 @@ def db_delete(table, where, database=dbase1):
     db.close()
 
 
-def db_insert(table, columns, values, database=dbase1):
+def db_insert(table, columns, values, database=cfg.dbase1):
 
     """
     Insert a new row in the table.
@@ -67,7 +67,7 @@ def db_insert(table, columns, values, database=dbase1):
     db.close()
 
 
-def db_select(table, columns, where=None, database=dbase1):
+def db_select(table, columns, where=None, database=cfg.dbase1):
 
     """
     Return content from a specific table of the database.
@@ -98,7 +98,7 @@ def db_select(table, columns, where=None, database=dbase1):
     return content
 
 
-def db_update(table, columns, values, where, database=dbase1):
+def db_update(table, columns, values, where, database=cfg.dbase1):
 
     """
     Update values in the table.

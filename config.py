@@ -1,5 +1,8 @@
 import os
 
+dbase1 = 'fantascandalo_db.db'
+dbase2 = '/Users/andrea/Desktop/Cartelle/Bots/FantAstaBot/fanta_asta_db.db'
+
 # update_database.py
 CHROME_PATH = os.getcwd() + '/chromedriver'
 WAIT = 10

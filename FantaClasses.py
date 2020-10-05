@@ -882,12 +882,14 @@ def assert_df_is_correct(dataframe, columns):
 	classifica = {team[0]: team[1:] for team in classifica}
 	df = pd.DataFrame.from_dict(classifica, orient='index', columns=columns)
 
-	df.sort_index(inplace=True)
-	dataframe.sort_index(inplace=True)
+	df_sorted = df.sort_index()
+	dataframe_sorted = dataframe.sort_index()
 
-	if not dataframe.equals(df):
+	if not dataframe_sorted.equals(df_sorted):
 		dataframe.sort_values('Pt', inplace=True, ascending=False)
 		display(dataframe)
+		print('Classifica reale:')
+		display(df)
 		raise ValueError('La classifica non coincide con quella reale')
 
 
