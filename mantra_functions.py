@@ -933,9 +933,9 @@ def predict_lineup(fantateam, players_out, day, lineup=None, scheme=None):
 
 if __name__ == '__main__':
 
-	predict_lineup(fantateam='picchia',
-	               players_out=['hateboer', 'de ligt'],
-	               day=35,
+	predict_lineup(fantateam='bucalina',
+	               players_out=['muriel', 'boga', 'alves'],
+	               day=4,
 	               # lineup=['ospina',
 	               #         'koulou', 'bonucci', 'toloi',
 	               #         'biraghi', 'brozo', 'bonaventura', 'lazzari',
