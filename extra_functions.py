@@ -176,7 +176,9 @@ def real_round_from_line(line):
 		args = [iter(iterable)] * n
 		return zip_longest(*args, fillvalue=fillvalue)
 
-	fantateams = dbf.db_select(table='teams', columns=['team_name'])
+	fantateams = dbf.db_select(table='teams',
+	                           columns=['team_name'],
+	                           where='')
 	letters = string.ascii_uppercase
 
 	letter2team = {letters[i]: fantateams[i] for i in range(len(fantateams))}

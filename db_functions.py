@@ -5,15 +5,7 @@ from nltk.util import ngrams
 import config as cfg
 
 
-def empty_table(table, database=cfg.dbase1):
-
-    """
-    Delete everything from table.
-
-    :param table: str
-    :param database: str
-
-    """
+def empty_table(table: str, database: str = cfg.dbase1):
 
     db, c = start_db(database)
 
@@ -24,16 +16,7 @@ def empty_table(table, database=cfg.dbase1):
     db.close()
 
 
-def db_delete(table, where, database=cfg.dbase1):
-
-    """
-    Remove entry from database.
-
-    :param table: str
-    :param where: str
-    :param database: str
-
-    """
+def db_delete(table: str, where: str, database: str = cfg.dbase1):
 
     db, c = start_db(database)
 
@@ -44,17 +27,8 @@ def db_delete(table, where, database=cfg.dbase1):
     db.close()
 
 
-def db_insert(table, columns, values, database=cfg.dbase1):
-
-    """
-    Insert a new row in the table.
-
-    :param table: str, name of the table
-    :param columns: list, each element of the list is a column of the table.
-    :param values: list, values of the corresponding columns
-    :param database: str
-
-    """
+def db_insert(table: str, columns: list, values: list,
+              database: str = cfg.dbase1):
 
     db, c = start_db(database)
 
@@ -67,19 +41,8 @@ def db_insert(table, columns, values, database=cfg.dbase1):
     db.close()
 
 
-def db_select(table, columns, where=None, database=cfg.dbase1):
-
-    """
-    Return content from a specific table of the database.
-
-    :param table: str, name of the table
-    :param columns: list, each element of the list is a column of the table.
-    :param where: str, condition
-    :param database: str
-
-    :return: list of tuples or list of elements
-
-    """
+def db_select(table: str, columns: list, where: str = None,
+              database: str = cfg.dbase1):
 
     db, c = start_db(database)
 
@@ -98,18 +61,8 @@ def db_select(table, columns, where=None, database=cfg.dbase1):
     return content
 
 
-def db_update(table, columns, values, where, database=cfg.dbase1):
-
-    """
-    Update values in the table.
-
-    :param table: str, name of the table
-    :param columns: list, each element of the list is a column of the table.
-    :param values: list, values of the corresponding columns
-    :param where: str, condition
-    :param database: str
-
-    """
+def db_update(table: str, columns: list, values: list, where: str,
+              database: str = cfg.dbase1):
 
     db, c = start_db(database)
 
@@ -121,18 +74,7 @@ def db_update(table, columns, values, where, database=cfg.dbase1):
     db.close()
 
 
-def jaccard_result(in_opt, all_opt, ngrm):
-
-    """
-    Fix user input.
-
-    :param in_opt: str
-    :param all_opt: list
-    :param ngrm: int, ngrams length
-
-    :return jac_res: str
-
-    """
+def jaccard_result(in_opt: str, all_opt: list, ngrm: int) -> str:
 
     in_opt = in_opt.lower().replace(' ', '')
     n_in = set(ngrams(in_opt, ngrm))
@@ -143,12 +85,12 @@ def jaccard_result(in_opt, all_opt, ngrm):
     distances = [jaccard_distance(n_in, n_out) for n_out in n_outs]
 
     if len(set(distances)) == 1:
-        return jaccard_result(in_opt, all_opt, ngrm-1) if ngrm > 2 else False
+        return jaccard_result(in_opt, all_opt, ngrm-1) if ngrm > 2 else ''
     else:
         return all_opt[np.argmin(distances)]
 
 
-def start_db(database):
+def start_db(database: str) -> tuple:
 
     db = sqlite3.connect(database)
     c = db.cursor()
