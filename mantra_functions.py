@@ -385,7 +385,8 @@ def schemes_to_iterate(day, fantateam):
 
 	all_schemes = dbf.db_select(
 			table='schemes_details',
-			columns=['scheme'])
+			columns=['scheme'],
+			where='')
 
 	return scheme, all_schemes
 
@@ -861,7 +862,9 @@ def predict_lineup(fantateam, players_out, day, lineup=None, scheme=None):
 	clean_db = True if lineup else False
 
 	# Fix fantateam name
-	all_fantateams = dbf.db_select(table='teams', columns=['team_name'])
+	all_fantateams = dbf.db_select(table='teams',
+	                               columns=['team_name'],
+	                               where='')
 	fantateam = dbf.jaccard_result(in_opt=fantateam,
 	                               all_opt=all_fantateams,
 	                               ngrm=3)

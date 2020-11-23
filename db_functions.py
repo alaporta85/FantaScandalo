@@ -41,7 +41,7 @@ def db_insert(table: str, columns: list, values: list,
     db.close()
 
 
-def db_select(table: str, columns: list, where: str = None,
+def db_select(table: str, columns: list, where: str,
               database: str = cfg.dbase1):
 
     db, c = start_db(database)

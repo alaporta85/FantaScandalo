@@ -350,10 +350,12 @@ class League(object):
 		self.all_players = all_players
 		self.captain = captain
 		self.captain_details = dict(dbf.db_select(table='captain_details',
-		                                          columns='*'))
+		                                          columns='*',
+		                                          where=''))
 		self.rfactor = rfactor
 		self.rfactor_details = dict(dbf.db_select(table='rfactor_details',
-		                                          columns='*'))
+		                                          columns='*',
+		                                          where=''))
 		self.schedule = ef.generate_schedule(a_round, self.n_days)
 		self.matches = []
 
@@ -878,7 +880,7 @@ def assert_df_is_correct(dataframe, columns):
 
 	"""
 
-	classifica = dbf.db_select(table='classifica', columns=['*'])
+	classifica = dbf.db_select(table='classifica', columns=['*'], where='')
 	classifica = {team[0]: team[1:] for team in classifica}
 	df = pd.DataFrame.from_dict(classifica, orient='index', columns=columns)
 
@@ -1003,7 +1005,8 @@ def captain_points(captain_true_false, fantateam_name, lineup,
 	if not captain_true_false:
 		return 0
 
-	text = dbf.db_select(table='captains', columns=[f'day_{day}'],
+	text = dbf.db_select(table='captains',
+	                     columns=[f'day_{day}'],
 	                     where=f'team_name = "{fantateam_name}"')[0]
 	captain, vice = text.split(', ')
 
@@ -1074,12 +1077,12 @@ def optimal_number_iterations(verbose):
 	plt.show()
 
 
-fantateams = dbf.db_select(table='teams', columns=['team_name'])
+fantateams = dbf.db_select(table='teams', columns=['team_name'], where='')
 
-players = set(dbf.db_select(table='votes', columns=['name']))
+players = set(dbf.db_select(table='votes', columns=['name'], where=''))
 players = {pl: Player(pl) for pl in players}
 
-our_round = [dbf.db_select(table='round', columns=[f'day_{i}'])
+our_round = [dbf.db_select(table='round', columns=[f'day_{i}'], where='')
              for i in range(1, len(fantateams))]
 
 DAYS = last_day_played()

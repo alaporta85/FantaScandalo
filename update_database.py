@@ -27,7 +27,7 @@ def add_6_politico_if_needed(day):
 	if len(teams_in_day) == 20:
 		return
 
-	all_teams = set(dbf.db_select(table='votes', columns=['team']))
+	all_teams = set(dbf.db_select(table='votes', columns=['team'], where=''))
 	missing = all_teams - teams_in_day
 
 	votes_of_day = dbf.db_select(
@@ -89,7 +89,8 @@ def last_day_played():
 	"""
 
 	list_of_abs_points = dbf.db_select(table='absolute_points',
-	                                   columns=['*'])[0][1:]
+	                                   columns=['*'],
+	                                   where='')[0][1:]
 
 	try:
 		return list_of_abs_points.index(None)
@@ -401,7 +402,7 @@ def scrape_roles_and_players_serie_a(brow):
 	"""
 
 	# Players which are already in the db with their roles
-	already_in_db = dbf.db_select(table='roles', columns=['name'])
+	already_in_db = dbf.db_select(table='roles', columns=['name'], where='')
 
 	# Download excel file with the data
 	# url = 'https://www.fantacalcio.it/quotazioni-fantacalcio/mantra'
@@ -435,9 +436,9 @@ def scrape_roles_and_players_serie_a(brow):
 					values=[nm, rl])
 
 	# Update the db
-	teams_in_db = dbf.db_select(
-			table='all_players_serie_a',
-			columns=['team'])
+	teams_in_db = dbf.db_select(table='all_players_serie_a',
+	                            columns=['team'],
+	                            where='')
 
 	days_played = last_day_played()
 	for team, shortlist in shortlists.items():
@@ -778,7 +779,8 @@ def update_stats():
 	"""
 
 	names_in_stats = dbf.db_select(table='stats',
-	                               columns=['name'])
+	                               columns=['name'],
+	                               where='')
 
 	filename = ('/Users/andrea/Downloads/Quotazioni_' +
 	            'Fantacalcio_Ruoli_Mantra.xlsx')
@@ -823,7 +825,7 @@ def update_market_db():
 	# Update table "classifica"
 	cols = ['team', 'G', 'V', 'N', 'P', 'Gf', 'Gs', 'Dr', 'Pt', 'Tot']
 	dbf.empty_table(table='classifica', database=cfg.dbase2)
-	data = dbf.db_select(table='classifica', columns=cols)
+	data = dbf.db_select(table='classifica', columns=cols, where='')
 	for el in data:
 		dbf.db_insert(
 				table='classifica',
@@ -834,9 +836,7 @@ def update_market_db():
 	# Update table "players"
 	cols = ['name', 'team', 'roles', 'price', 'status']
 	dbf.empty_table(table='players', database=cfg.dbase2)
-	data = dbf.db_select(
-			table='stats',
-			columns=cols)
+	data = dbf.db_select(table='stats', columns=cols, where='')
 	for el in data:
 		dbf.db_insert(
 				table='players',
