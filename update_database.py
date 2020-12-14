@@ -11,13 +11,10 @@ from selenium.webdriver.common.by import By
 from selenium import webdriver
 
 
-def add_6_politico_if_needed(day):
+def add_6_politico_if_needed(day: int) -> None:
 
 	"""
 	Assign 6 to each player of the matches which have not been played.
-
-	:param day: int
-
 	"""
 
 	teams_in_day = set(dbf.db_select(

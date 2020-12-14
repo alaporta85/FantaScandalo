@@ -936,15 +936,15 @@ def predict_lineup(fantateam, players_out, day, lineup=None, scheme=None):
 
 if __name__ == '__main__':
 
-	predict_lineup(fantateam='bombagallo',
-	               players_out=['farago', 'naingolan', 'sensi'],
-	               day=5,
-	               # lineup=['ospina',
-	               #         'koulou', 'bonucci', 'toloi',
-	               #         'biraghi', 'brozo', 'bonaventura', 'lazzari',
-	               #         'de paul', 'cornelius', 'dzeko',
-	               #         'mertens', 'inglese', 'missiroli', 'castro',
-	               #         'asamoah', 'palomino', 'gunter', 'romero',
-	               #         'klavan', 'tomovic', 'meret', 'karnezis'],
-	               # scheme='3-4-1-2'
+	predict_lineup(fantateam='ciolle',
+	               players_out=['gosens'],
+	               day=10,
+	               lineup=['szczehny',
+	                       'skriniar', 'ligt', 'romero',
+	                       'faraoni', 'kessie', 'bakayoko', 'rabiot', 'gosens',
+	                       'barrow', 'belotti',
+	                       'chiesa', 'correa', 'lammers', 'lazovic',
+	                       'ruggeri', 'mckennie', 'ricci', 'amrabat',
+	                       'ambrosio', 'bastoni', 'buffon', 'pinsoglio'],
+	               scheme='3-5-2'
 	               )
