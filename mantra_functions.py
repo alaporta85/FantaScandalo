@@ -3,15 +3,12 @@ from itertools import combinations, permutations
 from collections import Counter
 
 
-def add_roles(list_of_players):
+def add_roles(list_of_players: list) -> (list, list):
 
 	"""
 	Add the corresponding role for each player in list_of_players. Ex:
 
-	:param list_of_players: list, Ex. ['SKORUPSKI', 'ASAMOAH', ...]
-
-	:return: tuple, Ex. [('SKORUPSKI', 'Por'), ('ASAMOAH', 'Ds;E'), ...]
-
+	['SKORUPSKI', 'ASAMOAH']  --->  [('SKORUPSKI', 'Por'), ('ASAMOAH', 'Ds;E')]
 	"""
 
 	gkeep_list = []
@@ -30,19 +27,13 @@ def add_roles(list_of_players):
 	return gkeep_list, field_list
 
 
-def check_when_0_subst(day, fantateam, players_in_field):
+def check_when_0_subst(day: int, fantateam: str,
+                       players_in_field: list) -> tuple:
 
 	"""
 	Check if malus are assigned when all players in field have vote. This is
 	possible because it is allowed to deploy from the beginning a lineup with
 	malus.
-
-	:param day: int
-	:param fantateam: str
-	:param players_in_field: list, Ex. [('CAPUANO', 'Ds;Dc'), ...]
-
-	:return: tuple, Ex. (0, '3-4-3')
-
 	"""
 
 	malus = 0

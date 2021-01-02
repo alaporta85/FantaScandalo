@@ -87,7 +87,8 @@ def jaccard_result(in_opt: str, all_opt: list, ngrm: int) -> str:
     if len(set(distances)) == 1:
         return jaccard_result(in_opt, all_opt, ngrm-1) if ngrm > 2 else ''
     else:
-        return all_opt[np.argmin(distances)]
+        idx = int(np.argmin(distances))
+        return all_opt[idx]
 
 
 def start_db(database: str) -> tuple:

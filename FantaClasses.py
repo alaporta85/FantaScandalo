@@ -350,11 +350,11 @@ class League(object):
 		self.all_players = all_players
 		self.captain = captain
 		self.captain_details = dict(dbf.db_select(table='captain_details',
-		                                          columns='*',
+		                                          columns=['*'],
 		                                          where=''))
 		self.rfactor = rfactor
 		self.rfactor_details = dict(dbf.db_select(table='rfactor_details',
-		                                          columns='*',
+		                                          columns=['*'],
 		                                          where=''))
 		self.schedule = ef.generate_schedule(a_round, self.n_days)
 		self.matches = []
