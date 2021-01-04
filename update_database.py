@@ -3,6 +3,7 @@ import time
 import db_functions as dbf
 import config as cfg
 import pandas as pd
+from openpyxl import load_workbook
 from collections import defaultdict
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from selenium.webdriver.support.ui import WebDriverWait
@@ -108,8 +109,14 @@ def open_excel_file(filename):
 	while True:
 
 		try:
-			players = pd.read_excel(filename, sheet_name='Tutti',
-			                        header=1)
+			wb = load_workbook(filename)
+			ws = wb.active
+
+			players = pd.DataFrame(ws.values)
+			players.columns = players.iloc[1]
+			players = players.iloc[2:].copy()
+			players.reset_index(drop=True, inplace=True)
+
 			return players
 		except FileNotFoundError:
 			continue
