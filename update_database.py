@@ -58,32 +58,23 @@ def add_6_politico_if_needed(day: int) -> None:
 				values=[value for value in row])
 
 
-def close_popup(brow):
+def close_popup(brow: webdriver) -> None:
 
-	"""
-	Close popup.
-
-	:param brow: selenium browser instance
-
-	"""
-
-	accetto = './/button[@class="sc-bwzfXH jlyVur"]'
+	accetto = './/button[@class="sc-ifAKCX ljEJIv"]'
 
 	try:
 		wait_clickable(brow, cfg.WAIT, accetto)
 		brow.find_element_by_xpath(accetto).click()
+		time.sleep(5)
 	except TimeoutException:
 		pass
 
 
-def last_day_played():
+def last_day_played() -> int:
 
 	"""
 	Return last day which has been played. Last day played is defined as the
 	last day in the db where absolute points are saved.
-
-	:return: int
-
 	"""
 
 	list_of_abs_points = dbf.db_select(table='absolute_points',
@@ -97,13 +88,10 @@ def last_day_played():
 		return len(list_of_abs_points)
 
 
-def open_excel_file(filename):
+def open_excel_file(filename: str) -> pd.DataFrame:
 
 	"""
 	Try opening the file until found.
-
-	:param filename: str, path of the file to open
-
 	"""
 
 	while True:
@@ -122,13 +110,10 @@ def open_excel_file(filename):
 			continue
 
 
-def manage_adblock():
+def manage_adblock() -> webdriver:
 
 	"""
 	Start the browser with adblock.
-
-	:return: selenium browser instance
-
 	"""
 
 	# Use AdBlock
@@ -149,14 +134,10 @@ def manage_adblock():
 def scrape_lineups_schemes_points():
 
 	"""
-	Scrape lineups, schemes and absolute points and update database.
-
+	Scrape lineups, schemes and absolute points.
 	"""
 
 	brow = manage_adblock()
-
-	# To know if it is the first iteration. If yes, close the popup
-	first2scrape = True
 
 	# To know if absolute points need to be scraped. It will be False when
 	# scraping lineups of the current day, still incomplete
@@ -167,22 +148,10 @@ def scrape_lineups_schemes_points():
 
 		brow.get(f'{cfg.BASE_URL}formazioni/{day}')
 
-		if first2scrape:
+		if day == starting_day:
 			close_popup(brow)
-			first2scrape = False
-		time.sleep(5)
 
-		# The actual day of the league. We need it to know when stop scraping
-		real_day = './/div[@class="filter-option-inner-inner"]'
-		wait_visible(brow, cfg.WAIT, real_day)
-		real_day = int(brow.find_element_by_xpath(real_day).text.split('°')[0])
-		if day != real_day:
-			break
-
-		# If some lineup is missing, stop
-		missing_lineups = len(brow.find_elements_by_xpath(
-				'.//div[contains(@class, "hidden-formation")]'))
-		if missing_lineups:
+		if wrong_day_for_lineups(brow=brow, day_to_scrape=day):
 			break
 
 		# Find all matches
@@ -281,15 +250,10 @@ def scrape_lineups_schemes_points():
 	return brow
 
 
-def scrape_allplayers_fantateam(brow):
+def scrape_allplayers_fantateam(brow: webdriver) -> webdriver:
 
 	"""
 	Scrape the complete set of players per each fantateam, day by day.
-
-	:param brow: selenium browser instance
-
-	:return brow: selenium browser instance
-
 	"""
 
 	# Used later to fill the right cell in the 'all_players' table
@@ -358,14 +322,11 @@ def update_players_status_in_stats(team_name, list_of_players):
 				where=f'name = "{player}"')
 
 
-def scrape_classifica(brow):
+def scrape_classifica(brow: webdriver) -> None:
 
 	"""
 	Scrape real data from website in order to check later how the algorithm is
 	working.
-
-	:param brow: selenium browser instance
-
 	"""
 
 	brow.get(f'{cfg.BASE_URL}classifica')
@@ -462,7 +423,7 @@ def scrape_roles_and_players_serie_a(brow):
 	return brow
 
 
-def regular_or_from_bench(player):
+def regular_or_from_bench(player: webdriver) -> (int, int, int):
 
 	"""
 	Set info about playing and substitutions for each player.
@@ -506,7 +467,7 @@ def scrape_votes(brow):
 
 	for day in range(1, days_played + 1):
 
-		if wrong_day_to_scrape(day):
+		if wrong_day_for_votes(day):
 			continue
 
 		url = main_url + str(day)
@@ -514,7 +475,6 @@ def scrape_votes(brow):
 
 		all_tables = brow.find_elements_by_xpath('.//table[@role="grid"]')
 		for table in all_tables:
-			# team = table.find_element_by_xpath('.//span[@class="txtbig"]')
 			team = table.find_element_by_xpath('.//th[@class="team-header"]')
 			scroll_to_element(brow, team)
 			team = team.get_attribute('innerText')
@@ -606,7 +566,8 @@ def scrape_votes(brow):
 	return brow
 
 
-def scroll_to_element(brow, element, position='{block: "center"}'):
+def scroll_to_element(brow: webdriver, element: webdriver,
+                      position: str = '{block: "center"}') -> None:
 
 	"""
 	If the argument of 'scrollIntoView' is 'true' the command scrolls
@@ -619,53 +580,34 @@ def scroll_to_element(brow, element, position='{block: "center"}'):
 			element)
 
 
-def wait_clickable(brow, seconds, element):
+def wait_clickable(brow: webdriver, seconds: int, element_path: str) -> None:
 
 	"""
 	Forces the script to wait for the element to be clickable before doing
 	any other action.
-
-	:param brow:
-	:param seconds: int, maximum wait before returning a TimeoutException
-	:param element: str, xpath of the element
-
-	:return: nothing
-
 	"""
 
 	WebDriverWait(
 			brow, seconds).until(ec.element_to_be_clickable(
-					(By.XPATH, element)))
+					(By.XPATH, element_path)))
 
 
-def wait_visible(brow, seconds, element):
+def wait_visible(brow: webdriver, seconds: int, element_path: str) -> None:
 
 	"""
 	Forces the script to wait for the element to be visible before doing
 	any other action.
-
-	:param brow:
-	:param seconds: int, maximum wait before returning a TimeoutException
-	:param element: str, xpath of the element
-
-	:return: nothing
-
 	"""
 
 	WebDriverWait(
 			brow, seconds).until(ec.visibility_of_element_located(
-					(By.XPATH, element)))
+					(By.XPATH, element_path)))
 
 
-def wrong_day_to_scrape(day):
+def wrong_day_for_votes(day: int) -> bool:
 
 	"""
 	Check if we need to scrape votes relative to 'day'.
-
-	:param day: int
-
-	:return: bool
-
 	"""
 
 	teams_in_db = set(dbf.db_select(
@@ -673,39 +615,46 @@ def wrong_day_to_scrape(day):
 			columns=['team'],
 			where=f'day = {day}'))
 
-	if len(teams_in_db) == 20:
+	return True if len(teams_in_db) == 20 else False
+
+
+def wrong_day_for_lineups(brow: webdriver, day_to_scrape: int) -> bool:
+
+	# First check if day in the webpage is the same as the day to scrape
+	real_day_path = './/div[@class="filter-option-inner-inner"]'
+	wait_visible(brow, cfg.WAIT, real_day_path)
+	real_day = brow.find_element_by_xpath(real_day_path)
+	real_day = int(real_day.text.split('°')[0])
+
+	if day_to_scrape != real_day:
 		return True
-	else:
-		return False
+
+	# Then check if some lineup is missing
+	hidden_path = './/div[contains(@class, "hidden-formation")]'
+	missing_lineups = brow.find_elements_by_xpath(hidden_path)
+
+	return True if missing_lineups else False
 
 
-def calculate_mv(player):
+def calculate_mv(player: str) -> (int, float):
 
 	"""
 	Calculate vote average for player.
-
-	:param player: str
-
-	:return: tuple
 	"""
 
 	votes = dbf.db_select(table='votes',
 	                      columns=['alvin'],
 	                      where=f'name = "{player}" AND alvin != "sv"')
 	matches = len(votes)
+	return matches, round(sum(votes)/matches, 2) if matches else (0, 0.0)
 
-	return matches, round(sum(votes)/matches, 2) if matches else 0
 
-
-def calculate_all_bonus(player):
+def calculate_all_bonus(player: str) -> int:
 
 	"""
 	Calculate total bonus for player.
-
-	:param player: str
-
-	:return: int
 	"""
+
 	plus1 = dbf.db_select(table='votes',
 	                      columns=['ass'],
 	                      where=f'name = "{player}"')
@@ -714,24 +663,21 @@ def calculate_all_bonus(player):
 	plus3 = dbf.db_select(table='votes',
 	                      columns=['gf', 'rp', 'rf'],
 	                      where=f'name = "{player}"')
-	plus3 = sum([sum(i) for i in plus3])*3
+	plus3 = sum([sum(i) for i in plus3]) * 3
 
 	return plus1 + plus3
 
 
-def calculate_all_malus(player):
+def calculate_all_malus(player: str) -> float:
 
 	"""
 	Calculate total malus for player.
-
-	:param player: str
-
-	:return: float
 	"""
+
 	minus05 = dbf.db_select(table='votes',
 	                        columns=['amm'],
 	                        where=f'name = "{player}"')
-	minus05 = sum(minus05)*.5
+	minus05 = sum(minus05) * .5
 
 	minus1 = dbf.db_select(table='votes',
 	                       columns=['gs', 'esp'],
@@ -741,7 +687,7 @@ def calculate_all_malus(player):
 	minus2 = dbf.db_select(table='votes',
 	                       columns=['au'],
 	                       where=f'name = "{player}"')
-	minus2 = sum(minus2)*2
+	minus2 = sum(minus2) * 2
 
 	minus3 = dbf.db_select(table='votes',
 	                       columns=['rs'],
@@ -751,14 +697,10 @@ def calculate_all_malus(player):
 	return minus05 + minus1 + minus2 + minus3
 
 
-def calculate_regular_in_out(player):
+def calculate_regular_in_out(player: str) -> (int, int, int):
 
 	"""
 	Calculate matches from beginning, going in and going out for player.
-
-	:param player: str
-
-	:return: tuple
 	"""
 
 	regular = dbf.db_select(table='votes',
