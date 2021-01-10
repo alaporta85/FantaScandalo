@@ -8,6 +8,9 @@ CHROME_PATH = os.getcwd() + '/chromedriver'
 WAIT = 10
 YEAR = '2020-21'
 BASE_URL = 'https://leghe.fantacalcio.it/fantascandalo/'
+VOTES_URL = f'https://www.fantacalcio.it/voti-fantacalcio-serie-a/{YEAR}/'
+QUOTAZIONI_FILENAME = ('/Users/andrea/Downloads/Quotazioni_' +
+                       'Fantacalcio_Ruoli_Mantra.xlsx')
 
 # extra_functions.py
 ALL_LEAGUES = ('/Users/andrea/Desktop/Cartelle/FantaScandalo/'

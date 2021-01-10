@@ -70,6 +70,105 @@ def close_popup(brow: webdriver) -> None:
 		pass
 
 
+def find_matches(brow: webdriver) -> (list, bool):
+
+	# To know if absolute points need to be scraped. It will be False when
+	# scraping lineups of the current day, still incomplete
+	day_is_closed = True
+
+	# Find all matches
+	matches = brow.find_elements_by_xpath(
+			'.//div[contains(@class, "match-details card calculated")]')
+	if not matches:
+		# If day it is not concluded it has a different attribute
+		matches = brow.find_elements_by_xpath(
+				'.//div[contains(@class, "match-details")]')
+		day_is_closed = False
+
+	return matches, day_is_closed
+
+
+def format_player_name(player_name: str) -> str:
+	return player_name.strip().upper().replace('.', '')
+
+
+def get_lineup(regular_elem: webdriver, bench_elem: webdriver) -> (str, str):
+
+	captain = None
+	vice = None
+	complete_lineup = []
+
+	players = regular_elem.find_elements_by_xpath(
+			'.//tr[contains(@class, "player-list-item")]')
+	players += bench_elem.find_elements_by_xpath(
+			'.//tr[contains(@class, "player-list-item")]')[:-1]
+	for player in players:
+		name = get_player_name(player_elem=player)
+		complete_lineup.append(name)
+
+		try:
+			player.find_element_by_xpath(
+					'.//li[@data-original-title="Capitano"]')
+			captain = name
+		except NoSuchElementException:
+			pass
+
+		try:
+			player.find_element_by_xpath(
+					'.//li[@data-original-title="Vice capitano"]')
+			vice = name
+		except NoSuchElementException:
+			pass
+
+	captains = f'{captain}, {vice}'.upper()
+	complete_lineup = ', '.join(complete_lineup).upper()
+
+	return captains, complete_lineup
+
+
+def get_match_data(brow: webdriver, match_element: webdriver) -> zip:
+
+	scroll_to_element(brow, match_element)
+	teams = match_element.find_elements_by_xpath(
+			'.//h4[@class="media-heading ellipsis"]')
+	schemes = match_element.find_elements_by_xpath('.//h5')
+	first11 = match_element.find_elements_by_xpath(
+			'.//table[@id="formationTable"]')
+	reserves = match_element.find_elements_by_xpath(
+			'.//table[@id="releaseTable"]')
+	points = match_element.find_elements_by_xpath(
+			'.//div[@class="team-main-info"]')
+	time.sleep(1)
+
+	return zip(teams, schemes, first11, reserves, points)
+
+
+def get_player_name(player_elem: webdriver) -> str:
+
+	name = player_elem.find_element_by_xpath(
+			'.//span[@class="player-name ellipsis"]')
+	name = name.get_attribute('innerText')
+
+	return format_player_name(player_name=name)
+
+
+def get_scheme(scheme_elem: webdriver) -> str:
+	return scheme_elem.get_attribute('innerText').strip().split('\n')[0]
+
+
+def get_abs_points(points_elem: webdriver) -> float:
+	return float(points_elem.get_attribute('innerText').strip().split('\n')[0])
+
+
+def get_team_name(brow: webdriver, team_element: webdriver) -> str:
+
+	nm = ''
+	while not nm:
+		scroll_to_element(brow, team_element)
+		nm = team_element.text.strip()
+	return nm
+
+
 def last_day_played() -> int:
 
 	"""
@@ -131,17 +230,13 @@ def manage_adblock() -> webdriver:
 	return brow
 
 
-def scrape_lineups_schemes_points():
+def scrape_lineups_schemes_points() -> webdriver:
 
 	"""
 	Scrape lineups, schemes and absolute points.
 	"""
 
 	brow = manage_adblock()
-
-	# To know if absolute points need to be scraped. It will be False when
-	# scraping lineups of the current day, still incomplete
-	scrape_points = True
 
 	starting_day = last_day_played() + 1
 	for day in range(starting_day, 36):
@@ -152,99 +247,46 @@ def scrape_lineups_schemes_points():
 			close_popup(brow)
 
 		if wrong_day_for_lineups(brow=brow, day_to_scrape=day):
-			break
+			return brow
 
 		# Find all matches
-		matches = brow.find_elements_by_xpath(
-				'.//div[contains(@class, "match-details card calculated")]')
-		if not matches:
-			# If day it is not concluded it has a different attribute
-			matches = brow.find_elements_by_xpath(
-					'.//div[contains(@class, "match-details")]')
-			scrape_points = False
+		matches, scrape_points = find_matches(brow=brow)
 
 		# Iterate the matches and update database
 		for match in matches:
-			scroll_to_element(brow, match)
-			teams = match.find_elements_by_xpath(
-					'.//h4[@class="media-heading ellipsis"]')
-			schemes = match.find_elements_by_xpath('.//h5')
-			first11 = match.find_elements_by_xpath(
-					'.//table[@id="formationTable"]')
-			reserves = match.find_elements_by_xpath(
-					'.//table[@id="releaseTable"]')
-			points = match.find_elements_by_xpath(
-					'.//div[@class="team-main-info"]')
-			time.sleep(1)
 
-			for team, scheme, table1, table2, score in zip(
-					teams, schemes, first11, reserves, points):
+			match_data = get_match_data(brow=brow, match_element=match)
 
-				team_name = ''
-				while not team_name:
-					scroll_to_element(brow, team)
-					team_name = team.text
+			for team, scheme, regular, bench, abs_points in match_data:
 
-				captain = None
-				vice = None
-				complete_lineup = []
+				team_name = get_team_name(brow=brow, team_element=team)
 
-				players = table1.find_elements_by_xpath(
-						'.//tr[contains(@class, "player-list-item")]')
-				players += table2.find_elements_by_xpath(
-						'.//tr[contains(@class, "player-list-item")]')[:-1]
-				for player in players:
-					name = ''
-					while not name:
-						scroll_to_element(brow, player)
-						name = player.find_element_by_xpath(
-							'.//span[@class="player-name ellipsis"]').text
-						name = name.replace('.', '')
-					complete_lineup.append(name)
-
-					try:
-						player.find_element_by_xpath(
-								'.//li[@data-original-title="Capitano"]')
-						captain = name
-					except NoSuchElementException:
-						pass
-
-					try:
-						player.find_element_by_xpath(
-								'.//li[@data-original-title="Vice capitano"]')
-						vice = name
-					except NoSuchElementException:
-						pass
-
-				captains = f'{captain}, {vice}'
-				complete_lineup = ', '.join(complete_lineup)
+				captains, complete_lineup = get_lineup(regular_elem=regular,
+				                                       bench_elem=bench)
 
 				dbf.db_update(
 						table='captains',
 						columns=[f'day_{day}'],
-						values=[captains.upper()],
+						values=[captains],
 						where=f'team_name="{team_name}"')
 
 				dbf.db_update(
 						table='lineups',
 						columns=[f'day_{day}'],
-						values=[complete_lineup.upper()],
+						values=[complete_lineup],
 						where=f'team_name="{team_name}"')
 
-				scroll_to_element(brow, scheme)
 				dbf.db_update(
 						table='schemes',
 						columns=[f'day_{day}'],
-						values=[scheme.text.split('\n')[0]],
+						values=[get_scheme(scheme_elem=scheme)],
 						where=f'team_name="{team_name}"')
 
 				if scrape_points:
-					scroll_to_element(brow, score)
-					score = float(score.text.split('\n')[0])
 					dbf.db_update(
 							table='absolute_points',
 							columns=[f'day_{day}'],
-							values=[score],
+							values=[get_abs_points(points_elem=abs_points)],
 							where=f'team_name="{team_name}"')
 
 	return brow
@@ -255,9 +297,6 @@ def scrape_allplayers_fantateam(brow: webdriver) -> webdriver:
 	"""
 	Scrape the complete set of players per each fantateam, day by day.
 	"""
-
-	# Used later to fill the right cell in the 'all_players' table
-	days_played = last_day_played()
 
 	# Go the webpage
 	brow.get(f'{cfg.BASE_URL}rose')
@@ -272,24 +311,21 @@ def scrape_allplayers_fantateam(brow: webdriver) -> webdriver:
 	shortlists = brow.find_elements_by_xpath(shortlists)
 	for shortlist in shortlists:
 
-		# Name of the fantateam
-		team_name = ''
-		while not team_name:
-			team = shortlist.find_element_by_xpath('.//h4')
-			team_name = team.get_attribute('innerText').strip()
+		team_elem = shortlist.find_element_by_xpath('.//h4')
+		team_name = team_elem.get_attribute('innerText')
 
 		# Names containers
 		players = []
 		names = shortlist.find_elements_by_xpath('.//td[@data-key="name"]')
 		for player in names:
-			name = player.get_attribute('innerText').upper().strip()
-			name = name.replace('.', '')
+			name = player.get_attribute('innerText')
+			name = format_player_name(player_name=name)
 			players.append(name)
 
 		# Update "all_players" table
 		dbf.db_update(
 				table='all_players',
-				columns=[f'day_{days_played}'],
+				columns=[f'day_{last_day_played()}'],
 				values=[', '.join(players)],
 				where=f'team_name = "{team_name}"')
 
@@ -299,12 +335,8 @@ def scrape_allplayers_fantateam(brow: webdriver) -> webdriver:
 	return brow
 
 
-def update_players_status_in_stats(team_name, list_of_players):
-
-	"""
-	:param team_name: str
-	:param list_of_players: list
-	"""
+def update_players_status_in_stats(team_name: str,
+                                   list_of_players: list) -> None:
 
 	# First set all players of team as FREE
 	dbf.db_update(
@@ -354,16 +386,11 @@ def scrape_classifica(brow: webdriver) -> None:
 	brow.close()
 
 
-def scrape_roles_and_players_serie_a(brow):
+def scrape_roles_and_players_serie_a(brow: webdriver) -> webdriver:
 
 	"""
 	Scrape all players from each real team in Serie A and their roles.
 	Players are used when 6 politico is needed.
-
-	:param brow: selenium browser instance
-
-	:return: selenium browser instance
-
 	"""
 
 	# Players which are already in the db with their roles
@@ -379,18 +406,14 @@ def scrape_roles_and_players_serie_a(brow):
 	# brow.find_element_by_xpath(button).click()
 	# time.sleep(2)
 
-	# Load file and remove it from local
-	filename = ('/Users/andrea/Downloads/Quotazioni_' +
-	            'Fantacalcio_Ruoli_Mantra.xlsx')
-
-	players = open_excel_file(filename)
+	players = open_excel_file(cfg.QUOTAZIONI_FILENAME)
 
 	# Create dict where keys are the teams of Serie A and values are lists
 	# containing their players
 	shortlists = defaultdict(list)
 	for row in range(len(players)):
 		rl, nm, tm = players.loc[row, ['R', 'Nome', 'Squadra']].values
-		nm = nm.replace('.', '')
+		nm = format_player_name(player_name=nm)
 		shortlists[tm.upper()].append(nm)
 
 		# Update roles in the db
@@ -405,7 +428,6 @@ def scrape_roles_and_players_serie_a(brow):
 	                            columns=['team'],
 	                            where='')
 
-	days_played = last_day_played()
 	for team, shortlist in shortlists.items():
 		shortlist = ', '.join(shortlist)
 		if team not in teams_in_db:
@@ -416,7 +438,7 @@ def scrape_roles_and_players_serie_a(brow):
 		else:
 			dbf.db_update(
 					table='all_players_serie_a',
-					columns=[f'day_{days_played}'],
+					columns=[f'day_{last_day_played()}'],
 					values=[shortlist],
 					where=f'team = "{team}"')
 
@@ -454,23 +476,18 @@ def regular_or_from_bench(player: webdriver) -> (int, int, int):
 	return regular, going_in, going_out
 
 
-def scrape_votes(brow):
+def scrape_votes(brow: webdriver) -> webdriver:
 
 	"""
 	Download the excel file with the votes day by day and update the db.
-	:param brow: selenium browser instance
-
 	"""
 
-	days_played = last_day_played()
-	main_url = f'https://www.fantacalcio.it/voti-fantacalcio-serie-a/{cfg.YEAR}/'
-
-	for day in range(1, days_played + 1):
+	for day in range(1, last_day_played() + 1):
 
 		if wrong_day_for_votes(day):
 			continue
 
-		url = main_url + str(day)
+		url = cfg.VOTES_URL + str(day)
 		brow.get(url)
 
 		all_tables = brow.find_elements_by_xpath('.//table[@role="grid"]')
@@ -487,7 +504,7 @@ def scrape_votes(brow):
 
 				nm = data[0].find_element_by_xpath(
 						'.//a').get_attribute('innerText')
-				nm = nm.replace('.', '')
+				nm = format_player_name(player_name=nm)
 				alvin = data[2].find_element_by_xpath(
 						'.//span').get_attribute('innerText')
 				color = data[2].find_element_by_xpath(
@@ -557,7 +574,7 @@ def scrape_votes(brow):
 						         'gf', 'gs', 'rp', 'rs', 'rf', 'au', 'amm',
 						         'esp', 'ass', 'regular', 'going_in',
 						         'going_out'],
-						values=[day, nm.strip().upper(), team, alvin,
+						values=[day, nm, team, alvin,
 						        gf, gs, rp, rs, rf, au, amm,
 						        esp, ass, regular, going_in,
 						        going_out])
@@ -718,7 +735,7 @@ def calculate_regular_in_out(player: str) -> (int, int, int):
 	return sum(regular), sum(going_in), sum(going_out)
 
 
-def update_stats():
+def update_stats() -> None:
 
 	"""
 	Update database used for market with stats.
@@ -728,14 +745,12 @@ def update_stats():
 	                               columns=['name'],
 	                               where='')
 
-	filename = ('/Users/andrea/Downloads/Quotazioni_' +
-	            'Fantacalcio_Ruoli_Mantra.xlsx')
-	players = open_excel_file(filename)
+	players = open_excel_file(cfg.QUOTAZIONI_FILENAME)
 
 	for row in range(players.shape[0]):
 		roles, name, team, price = players.iloc[row][['R', 'Nome',
 		                                              'Squadra', 'Qt. A']]
-		name = name.replace('.', '')
+		name = format_player_name(player_name=name)
 		matches, mv = calculate_mv(name)
 		bonus = calculate_all_bonus(name)
 		malus = calculate_all_malus(name)
@@ -759,7 +774,7 @@ def update_stats():
 			              values=[name, team, roles, 'FREE', mv, mfv, regular,
 			                      going_in, going_out, price])
 
-	os.remove(filename)
+	os.remove(cfg.QUOTAZIONI_FILENAME)
 
 
 def update_market_db():
