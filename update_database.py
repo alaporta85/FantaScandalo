@@ -89,7 +89,7 @@ def find_matches(brow: webdriver) -> (list, bool):
 
 
 def format_player_name(player_name: str) -> str:
-	return player_name.strip().upper().replace('.', '')
+	return player_name.strip().upper().replace('.', '').replace(' *', '')
 
 
 def get_lineup(regular_elem: webdriver, bench_elem: webdriver) -> (str, str):
@@ -312,7 +312,7 @@ def scrape_allplayers_fantateam(brow: webdriver) -> webdriver:
 	for shortlist in shortlists:
 
 		team_elem = shortlist.find_element_by_xpath('.//h4')
-		team_name = team_elem.get_attribute('innerText')
+		team_name = team_elem.get_attribute('innerText').strip()
 
 		# Names containers
 		players = []
@@ -663,7 +663,7 @@ def calculate_mv(player: str) -> (int, float):
 	                      columns=['alvin'],
 	                      where=f'name = "{player}" AND alvin != "sv"')
 	matches = len(votes)
-	return matches, round(sum(votes)/matches, 2) if matches else (0, 0.0)
+	return (matches, round(sum(votes)/matches, 2)) if matches else (0, 0.0)
 
 
 def calculate_all_bonus(player: str) -> int:
@@ -815,4 +815,4 @@ if __name__ == '__main__':
 	scrape_classifica(browser)
 
 	update_stats()
-	update_market_db()
+	# update_market_db()
