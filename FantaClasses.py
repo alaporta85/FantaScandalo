@@ -216,16 +216,24 @@ class Match(object):
 
 		captain1 = captain_points(self.captain, self.team1.name, lineup1,
 		                          self.day, self.captain_details)
-		rfactor1 = rfactor_points(self.rfactor, self.rfactor_details, lineup1,
-		                          self.day)
 		self.team1.captain_bonus_malus_balance += captain1
+
+		if len(votes1) == 11:
+			rfactor1 = rfactor_points(self.rfactor, self.rfactor_details,
+			                          lineup1, self.day)
+		else:
+			rfactor1 = 0
 		self.team1.rfactor_bonus_malus_balance += rfactor1
 
 		captain2 = captain_points(self.captain, self.team2.name, lineup2,
 		                          self.day, self.captain_details)
-		rfactor2 = rfactor_points(self.rfactor, self.rfactor_details, lineup2,
-		                          self.day)
 		self.team2.captain_bonus_malus_balance += captain2
+
+		if len(votes2) == 11:
+			rfactor2 = rfactor_points(self.rfactor, self.rfactor_details,
+			                          lineup2, self.day)
+		else:
+			rfactor2 = 0
 		self.team2.rfactor_bonus_malus_balance += rfactor2
 
 		abs_points1 += captain1 + rfactor1

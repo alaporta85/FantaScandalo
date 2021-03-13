@@ -815,4 +815,4 @@ if __name__ == '__main__':
 	scrape_classifica(browser)
 
 	update_stats()
-	# update_market_db()
+	update_market_db()
