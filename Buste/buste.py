@@ -482,6 +482,7 @@ def print_results(modify_db):
 	risultati = tabulate(pd.DataFrame(buste_results(modify_db)),
 	                     showindex=False, headers='keys', stralign='right',
 	                     tablefmt="orgtbl")
+	return risultati
 
 	buchi = {i: MIN_NUM_PLAYERS - number_of_players_per_team[i] for i in
 	         budgets}
@@ -547,23 +548,27 @@ fix_buste_names()
 
 buste = {i: Busta(i) for i in budgets}
 
-print_results(modify_db=True)
+r = print_results(modify_db=False)
 
-all_pl = dbf.db_select(database=dbase2,
-                       table='stats',
-                       columns_in=['name', 'status'])
+import pickle
+with open('res1.pickle', 'wb') as handle:
+	pickle.dump(r, handle)
 
-for pl, st in all_pl:
-	dbf.db_update(database=dbase1,
-	              table='players',
-	              columns=['player_status'],
-	              values=[st],
-	              where=f'player_name = "{pl}"')
-
-for team in budgets:
-	b = budgets[team]
-	dbf.db_update(database=dbase1,
-	              table='budgets',
-	              columns=['budget_value'],
-	              values=[b],
-	              where=f'budget_team = "{team}"')
+# all_pl = dbf.db_select(database=dbase2,
+#                        table='stats',
+#                        columns_in=['name', 'status'])
+#
+# for pl, st in all_pl:
+# 	dbf.db_update(database=dbase1,
+# 	              table='players',
+# 	              columns=['player_status'],
+# 	              values=[st],
+# 	              where=f'player_name = "{pl}"')
+#
+# for team in budgets:
+# 	b = budgets[team]
+# 	dbf.db_update(database=dbase1,
+# 	              table='budgets',
+# 	              columns=['budget_value'],
+# 	              values=[b],
+# 	              where=f'budget_team = "{team}"')

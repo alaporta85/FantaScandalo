@@ -490,7 +490,9 @@ def scrape_votes(brow: webdriver) -> webdriver:
 		url = cfg.VOTES_URL + str(day)
 		brow.get(url)
 
-		all_tables = brow.find_elements_by_xpath('.//table[@role="grid"]')
+		# all_tables = brow.find_elements_by_xpath('.//table[@role="grid"]')
+		all_tables = brow.find_elements_by_xpath(
+				'.//table[contains(@class , "table-ratings")]')
 		for table in all_tables:
 			team = table.find_element_by_xpath('.//th[@class="team-header"]')
 			scroll_to_element(brow, team)
@@ -530,37 +532,45 @@ def scrape_votes(brow: webdriver) -> webdriver:
 				try:
 					gf = data[6].find_element_by_xpath(
 							'.//span').get_attribute('innerText')
+					gf = 0 if gf == '-' else gf
 				except NoSuchElementException:
 					gf = 0
 				try:
 					rf = data[7].find_element_by_xpath(
 							'.//span').get_attribute('innerText')
+					rf = 0 if rf == '-' else rf
 				except NoSuchElementException:
 					rf = 0
 				try:
 					gs = data[8].find_element_by_xpath(
 							'.//span').get_attribute('innerText')
+					gs = 0 if gs == '-' else gs
 				except NoSuchElementException:
 					gs = 0
 				try:
 					rp = data[9].find_element_by_xpath(
 							'.//span').get_attribute('innerText')
+					rp = 0 if rp == '-' else rp
 				except NoSuchElementException:
 					rp = 0
 				try:
 					rs = data[10].find_element_by_xpath(
 							'.//span').get_attribute('innerText')
+					rs = 0 if rs == '-' else rs
 				except NoSuchElementException:
 					rs = 0
 				try:
 					au = data[11].find_element_by_xpath(
 							'.//span').get_attribute('innerText')
+					au = 0 if au == '-' else au
 				except NoSuchElementException:
 					au = 0
 				try:
 					ass = data[12].find_element_by_xpath(
 							'.//span').get_attribute('innerText')
-					if len(ass) == 1:
+					if ass == '-':
+						ass = 0
+					elif len(ass) == 1:
 						ass = int(ass)
 					else:
 						ass = int(ass[0])
@@ -807,7 +817,7 @@ def update_market_db():
 
 
 if __name__ == '__main__':
-
+	# browser = manage_adblock()
 	browser = scrape_lineups_schemes_points()
 	browser = scrape_allplayers_fantateam(browser)
 	scrape_roles_and_players_serie_a(browser)

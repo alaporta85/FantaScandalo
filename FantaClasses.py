@@ -1097,11 +1097,11 @@ DAYS = last_day_played()
 
 print(f'Giornate disputate: {DAYS}')
 
-# lg = League(fteams=fantateams,
-#             a_round=our_round,
-#             n_days=DAYS,
-#             all_players=players,
-#             captain=True,
-#             rfactor=True)
-#
-# lg.create_ranking(double_check=True)
+lg = League(fteams=fantateams,
+            a_round=our_round,
+            n_days=DAYS,
+            all_players=players,
+            captain=True,
+            rfactor=True)
+
+lg.create_ranking(double_check=True)

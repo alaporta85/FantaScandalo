@@ -671,8 +671,9 @@ def adapted(list_of_schemes, field_with_roles, bench_with_roles,
 						return list(zip(lineup_names, lineup_roles)), scheme
 					# else, check if it is possible to find an adapted
 					# solution
-					elif (len(uncovered) < n_malus and
-					      len(uncovered) <= n_substitutions):
+					# elif (len(uncovered) < n_malus and
+					#       len(uncovered) <= n_substitutions):
+					elif len(uncovered) < n_malus:
 
 						# Roles not used in field
 						available = Counter(lineup_roles) - Counter(candidate)
