@@ -1,942 +1,564 @@
-import db_functions as dbf
-from itertools import combinations, permutations
+import numpy as np
+import itertools
 from collections import Counter
+import db_functions as dbf
+
+
+def adapted_solution(field_info: list, bench_names_options: list,
+                     bench_roles_options: list, players_needed: int) -> tuple:
+
+    field_roles = [rl.replace(';', '/') for _, rl in field_info]
+
+    already_tried = []
+    results = []
+    for n_comb, r_comb in zip(bench_names_options, bench_roles_options):
+        if set(r_comb) in already_tried:
+            continue
+        already_tried.append(set(r_comb))
+        tmp = field_roles + list(r_comb)
+        if (too_many_attackers(list_of_roles=tmp) or
+                not enough_defenders(players_needed=players_needed,
+                                     list_of_roles=tmp, scheme_used='')):
+            continue
+
+        all_schemes = only_compatible_schemes(list_of_roles=tmp,
+                                              players_needed=players_needed,
+                                              scheme_to_exclude='')
+        n_pc = count_roles(['Pc'], tmp)
+        n_a = count_roles(['A'], tmp)
+        tmp = [rl for rl in tmp if rl not in ['A', 'Pc']]
+        fld_cnt = Counter([i for j in tmp for i in j.split('/')])
+        for sch in all_schemes:
+
+            lineup_mtx_full, all_res = solution_exists(
+                    players_needed=players_needed, scheme_used=sch,
+                    roles_in_lineup=[tmp], field_counter=fld_cnt,
+                    is_adapted=True, number_of_a=n_a, number_of_pc=n_pc)
+
+            if lineup_mtx_full.sum():
+                good_lineups = lineup_mtx_full[all_res]
+                good_lineups = [Counter(i) for i in good_lineups]
+
+                id_arr, _ = scheme_matrix_and_nrepeat(
+                        players_needed=players_needed, scheme_used=sch,
+                        field_counter=Counter([]), is_adapted=True,
+                        counting_malus=True, number_of_a=n_a,
+                        number_of_pc=n_pc)
+
+                id_arr = [Counter(i) for i in id_arr]
+                for c1, c2 in itertools.product(good_lineups, id_arr):
+                    n_malus = sum((c1-c2).values())
+
+                    if n_malus == 1:
+                        return field_info + list(
+                            zip(n_comb, r_comb)), sch, n_malus
+                    results.append((field_info + list(zip(n_comb, r_comb)),
+                                    sch,
+                                    n_malus))
+
+    if not results:
+        return [], '', 0
+
+    results.sort(key=lambda x: x[2])
+    return results[0]
 
 
 def add_roles(list_of_players: list) -> (list, list):
 
-	"""
-	Add the corresponding role for each player in list_of_players. Ex:
-
-	['SKORUPSKI', 'ASAMOAH']  --->  [('SKORUPSKI', 'Por'), ('ASAMOAH', 'Ds;E')]
-	"""
-
-	gkeep_list = []
-	field_list = []
-	for player in list_of_players:
-		role = dbf.db_select(
-				table='roles',
-				columns=['role'],
-				where=f'name = "{player}"')[0]
-
-		if role == 'Por':
-			gkeep_list.append((player, role))
-		else:
-			field_list.append((player, role))
-
-	return gkeep_list, field_list
-
-
-def check_when_0_subst(day: int, fantateam: str,
-                       players_in_field: list) -> tuple:
-
-	"""
-	Check if malus are assigned when all players in field have vote. This is
-	possible because it is allowed to deploy from the beginning a lineup with
-	malus.
-	"""
-
-	malus = 0
-
-	scheme = dbf.db_select(
-			table='schemes',
-			columns=[f'day_{day}'],
-			where=f'team_name = "{fantateam}"')[0]
-
-	scheme_details = dbf.db_select(
-			table='schemes_details',
-			columns=['details'],
-			where=f'scheme = "{scheme}"')[0].split(', ')[1:]
-
-	for i in range(len(players_in_field)):
-		role_to_cover = scheme_details[i].split('/')
-		role_in_field = players_in_field[i][1].split(';')
-
-		rl = set(role_to_cover) & set(role_in_field)
-
-		# If player can cover the position with no malus, one of the valid
-		# roles will be assigned
-		if rl:
-			players_in_field[i] = (players_in_field[i][0], list(rl)[0])
-
-		# else, a role with malus
-		else:
-			malus += 1
-			rl_malus = dbf.db_select(
-					table='malus',
-					columns=['malus'],
-					where=f'role = "{role_to_cover[0]}"')[0]
-			rl_malus = rl_malus.split(';')
-			rl = set(rl_malus) & set(role_in_field)
-			players_in_field[i] = (players_in_field[i][0], f'*{list(rl)[0]}')
-
-	return malus, scheme
-
-
-def convert_t(scheme, roles, mode):
-
-	"""
-	Convert T into T1 or T2 according to the module used or viceversa
-	(T1, T2 into T) depending on the 'mode' parameter.
-
-	T has special rules for substitutions depending on the module used.
-	Mode will be 'forward' at the beginning when looking for the valid lineup
-	and 'back' when found.
-
-	:param scheme: str, Ex. '3-5-2'
-	:param roles: list, Ex. ['Dc', 'Dc', 'Pc', 'W', 'C', 'Dd', 'E', 'C', 'T']
-	:param mode: str, 'back' or 'forward'
-
-	:return: list, Ex. ['Dc', 'Dc', 'Pc', 'W2', 'C', 'Dd', 'E', 'C', 'T']
-
-	"""
-
-	if mode == 'back':
-		roles = ['T' if (el == 'T1' or el == 'T1*' or
-		                 el == 'T2' or el == 'T2*') else el for el in roles]
-		return roles
-
-	elif mode == 'forward':
-		special_group = ['4-1-4-1']
-
-		if scheme in special_group:
-			return ['T2' if el == 'T' else el for el in roles]
-		else:
-			return ['T1' if el == 'T' else el for el in roles]
-
-
-def create_players_candidates(list_of_tuples, players_needed):
-
-	"""
-	Create all the combinations of the players inside 'list_of_tuples'
-	considering their roles. At the end each player will be single role. Ex:
-
-		list_of_tuples = [(PERIN, 'Por'), (SKRINIAR, 'Dc'), (RADU, 'Dc, Dd')]
-
-		candidates = [
-					  [(PERIN, 'Por'), (SKRINIAR, 'Dc'), (RADU, 'Dc')],
-					  [(PERIN, 'Por'), (SKRINIAR, 'Dc'), (RADU, 'Dd')]
-					 ]
-
-	:param list_of_tuples: list of tuples
-	:param players_needed: int, number of players to deploy
-
-	:return: list of lists
-
-	"""
-
-	# First separate players with just one role and players with more
-	single = []
-	multi = []
-
-	for player, roles in list_of_tuples:
-
-		if len(roles.split(';')) == 1:
-			single.append((player, roles))
-		else:
-			# For each role of the player there will be a tuple inside 'multi'
-			for role in roles.split(';'):
-				multi.append((player, role))
-
-	# Define how many players from 'multi' have to be added to 'single'
-	players_to_add = players_needed - len(single)
-
-	# Create the combinations and remove those where one or more players are
-	# repeated
-	multi = combinations(multi, players_to_add)
-	multi = [el for el in multi if
-	         len(set([i[0] for i in el])) == players_to_add]
-
-	# Create all the candidates where each player is single role
-	candidates = []
-	for comb in multi:
-		candidates.append(single + [pl for pl in comb])
-
-	return candidates
-
-
-def create_schemes_candidates(roles, players_needed):
-
-	"""
-	See function create_players_candidates.
-
-	:param roles: list of strings
-	:param players_needed: int
-
-	:return: list of lists
-
-	"""
-
-	def comb_is_valid(comb):
-
-		"""
-		Check that no interchangeble roles are present in comb.
-
-		:param comb: tuple
-
-		:return: bool
-
-		"""
-
-		return len(set([idx for idx, _ in comb])) == players_needed
-
-	# Roles which are interchangeble will have the same index
-	single = [(i, rl) for i, rls in enumerate(roles) for rl in rls.split('/')]
-	combs = list(combinations(single, players_needed))
-
-	return [[rl for _, rl in comb] for comb in combs if comb_is_valid(comb)]
-
-
-def filter_players_without_vote(day, players):
-
-	"""
-	Return the list players after removing the ones without vote on that day.
-
-	:param day: int
-	:param players: list of str
-
-	:return: list of str
-
-	"""
-
-	return [pl for pl in players if player_vote(day, pl) != 'sv']
-
-
-def flatten_dict(counter_dict):
-
-	"""
-	Flatten the dict containing the roles' counts into a list.
-
-	:param counter_dict: Counter, Ex. Counter({'M': 2, 'A': 2, 'Dc': 1})
-
-	:return: list, Ex. ['Dc', 'M', 'M', 'A', 'A']
-
-	"""
-
-	return [role for role in counter_dict for _ in range(counter_dict[role])]
+    gkeep_list = []
+    field_list = []
+    for player in list_of_players:
+        role = dbf.db_select(
+                table='roles',
+                columns=['role'],
+                where=f'name = "{player}"')[0]
+
+        if role == 'Por':
+            gkeep_list.append((player, role))
+        else:
+            field_list.append((player, role))
+
+    return gkeep_list, field_list
+
+
+def count_roles(which_roles: list, list_of_roles: list) -> int:
+    res = 0
+    for rl in which_roles:
+        res += sum([1 for i in list_of_roles if rl == i])
+    return res
 
 
 def deploy_goalkeeper(gkeep_field, gkeep_bench):
 
-	"""
-	Manage the goal-keeper substitution, which is always the first one to do,
-	and define the number of max substitutions allowed.
+    if gkeep_field:
+        gkeep = gkeep_field[0]
+        max_subst = 3
 
-	:param gkeep_field: list, Ex. [('HANDANOVIC', 'Por')]
-	:param gkeep_bench: list, Ex. [('PADELLI', 'Por')]
+    elif not gkeep_field and gkeep_bench:
+        gkeep = gkeep_bench[0]
+        max_subst = 2
 
-	:return: tuple, Ex. (('HANDANOVIC', 'Por'), 3)
+    else:
+        gkeep = None
+        max_subst = 3
 
-	"""
-
-	if gkeep_field:
-		gkeep = gkeep_field[0]
-		max_subst = 3
-
-	elif not gkeep_field and gkeep_bench:
-		gkeep = gkeep_bench[0]
-		max_subst = 2
-
-	else:
-		gkeep = None
-		max_subst = 3
-
-	return gkeep, max_subst
+    return gkeep, max_subst
 
 
-def mantra(day, fantateam, starting_players, roles, save_lineup=True):
+def efficient_solution(scheme_used: str, field_info: list,
+                       bench_names_options: list, bench_roles_options: list,
+                       players_needed: int) -> tuple:
 
-	"""
-	Find the valid lineup of the day.
+    field_roles = [rl.replace(';', '/') for nm, rl in field_info]
 
-	:param day: int
-	:param fantateam: str
-	:param starting_players: int
-	:param roles: bool, if False return only the names of the players
-	:param save_lineup: bool
+    for n_comb, r_comb in zip(bench_names_options, bench_roles_options):
+        tmp = field_roles + list(r_comb)
+        if (too_many_attackers(list_of_roles=tmp) or
+                not enough_defenders(players_needed=players_needed,
+                                     list_of_roles=tmp,
+                                     scheme_used='')):
+            continue
 
-	:return: tuple, (lineup, scheme, n_malus)
+        other_schemes = only_compatible_schemes(list_of_roles=tmp,
+                                                players_needed=players_needed,
+                                                scheme_to_exclude=scheme_used)
 
-	"""
+        fld_cnt = Counter([i for j in tmp for i in j.split('/')])
+        for sch in other_schemes:
+            if solution_exists(players_needed=players_needed,
+                               scheme_used=sch, roles_in_lineup=[tmp],
+                               field_counter=fld_cnt, is_adapted=False):
+                return field_info + list(zip(n_comb, r_comb)), sch
 
-	# Separate field and bench
-	field, bench = select_lineup(day, fantateam)
+    return [], ''
 
-	# Keep only players with vote
-	field_with_vote = filter_players_without_vote(day, field)
-	bench_with_vote = filter_players_without_vote(day, bench)
 
-	# Extract goal-keepers from field and bench
-	gkeep_field, field_with_roles = add_roles(field_with_vote)
-	gkeep_bench, bench_with_roles = add_roles(bench_with_vote)
+def enough_defenders(players_needed: int, list_of_roles: list,
+                     scheme_used: str) -> bool:
 
-	# Define the goal-keeper to use and the max number of substitutions allowed
-	gkeep, max_subst = deploy_goalkeeper(gkeep_field, gkeep_bench)
+    def n_defenders(all_roles: list) -> int:
+        return sum([1 for rl in all_roles if
+                    {'Dc', 'Dd', 'Ds'} & set(rl.split('/'))])
 
-	# Actual number of substitutions
-	n_subst = min(max_subst, starting_players - len(field_with_roles))
+    def min_n_defenders(n_players: int, scheme: str) -> int:
+        missing_players = 10 - n_players
 
-	# If no substitutions needed
-	if not n_subst:
-		n_malus, scheme = check_when_0_subst(day, fantateam, field_with_roles)
+        # When no scheme is passed it means a general check: there is always a
+        # min number of defenders needed, indipendently from the scheme. In
+        # normal conditions this number is 3 because no schemes accept less
+        # than 3 defenders. When playing with less than 11 players, it depends
+        # on how many players are missing
+        if not scheme:
+            return 3 - missing_players
 
-		if gkeep:
-			field_with_roles.insert(0, gkeep)
+        # On the other hand, when scheme is specified it means min number of
+        # defenders must be at least equal to those needed by the scheme taking
+        # into account the number of players playing.
+        def_in_scheme = int(scheme[0])
+        return def_in_scheme - missing_players
 
-		if save_lineup:
-			save_mantra_lineup(day, fantateam, field_with_roles)
+    def_in_lineup = n_defenders(all_roles=list_of_roles)
+    min_def = min_n_defenders(n_players=players_needed, scheme=scheme_used)
+    return True if def_in_lineup >= min_def else False
 
-		if roles:
-			return field_with_roles, scheme, n_malus
-		else:
-			return [pl for pl, rl in field_with_roles], scheme, n_malus
 
-	# Number of players allowed in the final lineup
-	players_allowed = len(field_with_roles) + n_subst
+def filter_players_without_vote(day, players):
+    return [pl for pl in players if player_vote(day, pl) != 'sv']
 
-	# All the schemes
-	scheme, other_schemes = schemes_to_iterate(day, fantateam)
 
-	# Remove some role from bench, to speed everything up
-	bench_with_roles = filter_for_pc(field_with_roles, bench_with_roles)
+def lineup_matrix_and_ntiles(players_needed: int, roles_in_lineup: list,
+                             scheme_used: str,
+                             field_counter: Counter) -> tuple:
+    id_arr = roles2matrix(players_needed=players_needed,
+                          list_of_roles=roles_in_lineup,
+                          scheme_used=scheme_used,
+                          field_counter=field_counter)
+    return id_arr, id_arr.shape[0]
 
-	# Look for an optimal solution
-	result, new_scheme = optimal(scheme, field_with_roles,
-	                             bench_with_roles, n_subst, players_allowed)
-	if result:
 
-		if gkeep:
-			result.insert(0, gkeep)
+def mantra(day, fantateam, starting_players):
 
-		if save_lineup:
-			save_mantra_lineup(day, fantateam, result)
+    def save_mantra_lineup(which_day, fteam, final_lineup, n_malus):
 
-		if roles:
-			return result, new_scheme, 0
-		else:
-			return [pl for pl, rl in result], new_scheme, 0
+        result = [f"{nm}:{rl}" for nm, rl in final_lineup]
+        result.insert(0, str(n_malus))
+        dbf.db_update(
+                table='mantra_lineups',
+                columns=[f'day_{which_day}'],
+                values=[', '.join(result)],
+                where=f'team_name="{fteam}"')
 
-	# In case no optimal solution is found, look for a solution with malus
-	result, new_scheme = adapted(other_schemes, field_with_roles,
-	                             bench_with_roles, n_subst, players_allowed)
+    # Separate field and bench
+    field, bench = select_lineup(day, fantateam)
 
-	if result:
-		n_malus = sum([1 for nm, rl in result if '*' in rl])
+    # Keep only players with vote
+    field_with_vote = filter_players_without_vote(day, field)
+    bench_with_vote = filter_players_without_vote(day, bench)
 
-		if gkeep:
-			result.insert(0, gkeep)
+    # Extract goal-keepers from field and bench
+    gkeep_field, field_with_roles = add_roles(field_with_vote)
+    gkeep_bench, bench_with_roles = add_roles(bench_with_vote)
 
-		if save_lineup:
-			save_mantra_lineup(day, fantateam, result)
+    # Define the goal-keeper to use and the max number of substitutions allowed
+    gkeep, max_subst = deploy_goalkeeper(gkeep_field, gkeep_bench)
 
-		if roles:
-			return result, new_scheme, n_malus
-		else:
-			return [pl for pl, rl in result], new_scheme, n_malus
+    # Actual number of substitutions
+    n_subst = min(max_subst, starting_players - len(field_with_roles))
 
-	# In case no adapted solution is found, repeat with less players
-	return mantra(day, fantateam, starting_players-1, roles, save_lineup)
+    malus = 0
+    scheme = dbf.db_select(
+            table='schemes',
+            columns=[f'day_{day}'],
+            where=f'team_name = "{fantateam}"')[0]
+    # If no substitutions needed
+    if not n_subst:
+        complete_lineup, new_scheme = field_with_roles, scheme
+    else:
+        bench_names = [nm for nm, rl in bench_with_roles]
+        bench_names_comb = list(itertools.combinations(bench_names, n_subst))
+        bench_roles = [rl.replace(';', '/') for nm, rl in bench_with_roles]
+        bench_roles_comb = list(itertools.combinations(bench_roles, n_subst))
+
+        complete_lineup, new_scheme = optimal_solution(
+                scheme_used=scheme,
+                field_info=field_with_roles,
+                bench_names_options=bench_names_comb,
+                bench_roles_options=bench_roles_comb,
+                players_needed=starting_players)
+
+        if not complete_lineup:
+            complete_lineup, new_scheme = efficient_solution(
+                    scheme_used=scheme,
+                    field_info=field_with_roles,
+                    bench_names_options=bench_names_comb,
+                    bench_roles_options=bench_roles_comb,
+                    players_needed=starting_players)
+
+        if not complete_lineup:
+            complete_lineup, new_scheme, malus = adapted_solution(
+                    field_info=field_with_roles,
+                    bench_names_options=bench_names_comb,
+                    bench_roles_options=bench_roles_comb,
+                    players_needed=starting_players)
+
+    if complete_lineup:
+        complete_lineup = [gkeep] + complete_lineup
+        save_mantra_lineup(which_day=day, fteam=fantateam,
+                           final_lineup=complete_lineup, n_malus=malus)
+        names = [nm for nm, _ in complete_lineup]
+        return names, new_scheme, malus
+    else:
+        return mantra(day, fantateam, starting_players-1)
+
+
+def only_compatible_schemes(list_of_roles: list, players_needed: int,
+                            scheme_to_exclude) -> list:
+
+    all_schemes = dbf.db_select(table='schemes_details',
+                                columns=['scheme'],
+                                where=f'scheme != "{scheme_to_exclude}"')
+
+    # First of all we need to remove all those schemes whose number of
+    # defenders is not compatible with the roles in field
+    all_schemes = [sch for sch in all_schemes if enough_defenders(
+            players_needed=players_needed, list_of_roles=list_of_roles,
+            scheme_used=sch)]
+
+    # Then we do the same considering the number of attackers
+    res = []
+    n_pc = count_roles(['Pc'], list_of_roles)
+    for sch in all_schemes:
+        rl_in_scheme = dbf.db_select(
+                table='schemes_details',
+                columns=['details'],
+                where=f'scheme = "{sch}"')[0].split(', ')[1:]
+
+        # To be a compatible scheme it must at least equal the number of
+        # attackers playing
+        if count_roles(['A/Pc'], rl_in_scheme) >= n_pc:
+            res.append(sch)
+    return res
+
+
+def optimal_solution(scheme_used: str, field_info: list,
+                     bench_names_options: list, bench_roles_options: list,
+                     players_needed: int) -> tuple:
+
+    field_roles = [rl.replace(';', '/') for nm, rl in field_info]
+
+    for n_comb, r_comb in zip(bench_names_options, bench_roles_options):
+        tmp = field_roles + list(r_comb)
+        if (too_many_attackers(list_of_roles=tmp) or
+                not enough_defenders(players_needed=players_needed,
+                                     list_of_roles=tmp,
+                                     scheme_used=scheme_used)):
+            continue
+
+        fld_cnt = Counter([i for j in tmp for i in j.split('/')])
+        if solution_exists(players_needed=players_needed,
+                           scheme_used=scheme_used, roles_in_lineup=[tmp],
+                           field_counter=fld_cnt, is_adapted=False):
+            return field_info + list(zip(n_comb, r_comb)), ''
+
+    return [], ''
 
 
 def player_vote(day, player_name):
 
-	"""
-	Return player's vote of the day.
-
-	:param day: int
-	:param player_name: str
-	:return:
-
-	"""
-
-	vote = dbf.db_select(
-		    table='votes',
+    vote = dbf.db_select(
+            table='votes',
             columns=['alvin'],
             where=f'day={day} AND name="{player_name}"')
 
-	return vote[0] if vote else 'sv'
+    return vote[0] if vote else 'sv'
 
 
-def schemes_to_iterate(day, fantateam):
+def rec_cart(start: int, list_of_roles: list, partial: list, results: list,
+             players_needed: int, scheme_used: str, some_counter: Counter,
+             used_counters: list):
 
-	"""
-	Return the scheme chosen by the player and the others.
+    def option_is_not_compatible(field_counter: Counter,
+                                 option_counter: Counter) -> bool:
 
-	:param day: int
-	:param fantateam: str
+        # To be compatible, option_counter must contain ALL the roles in field
+        return True if option_counter - field_counter else False
 
-	:return: tuple, Ex. ('3-4-1-2', ['3-4-3', '3-4-2-1', '3-5-2',...])
+    # To avoid repeating calculations: if roles are the same the result is the
+    # same no matter the players
+    if Counter(partial) in used_counters:
+        return
 
-	"""
+    # Define 2 conditions to filter
+    cond1 = too_many_attackers(list_of_roles=partial)
+    if some_counter:
+        cond2 = option_is_not_compatible(field_counter=some_counter,
+                                         option_counter=Counter(partial))
+    else:
+        # When we count the number of malus we use the original roles (not the
+        # adapted ones) which we already know are not compatible
+        cond2 = False
 
-	scheme = dbf.db_select(
-			table='schemes',
-			columns=[f'day_{day}'],
-			where=f'team_name = "{fantateam}"')[0]
+    if partial and (cond1 | cond2):
+        return
 
-	all_schemes = dbf.db_select(
-			table='schemes_details',
-			columns=['scheme'],
-			where='')
+    if len(partial) == len(list_of_roles):
+        # Once option is complete we check if there are enough defenders. We
+        # check the defenders because it is the only role which can not be
+        # replaced, not even with malus
+        if enough_defenders(players_needed=players_needed,
+                            list_of_roles=partial,
+                            scheme_used=scheme_used):
+            results.append(partial)
+            used_counters.append(Counter(partial))
+        return
 
-	return scheme, all_schemes
+    for element in list_of_roles[start]:
+        rec_cart(start=start+1, list_of_roles=list_of_roles,
+                 partial=partial+[element], results=results,
+                 players_needed=players_needed, scheme_used=scheme_used,
+                 some_counter=some_counter, used_counters=used_counters)
+
+
+def roles2matrix(players_needed: int, list_of_roles: list, scheme_used: str,
+                 field_counter: Counter) -> np.array:
+
+    # Split strings into lists
+    split = split_roles(list_of_options=list_of_roles, by='/')
+
+    # Create valid options
+    perms = []
+    for opt in split:
+        rec_cart(start=0, list_of_roles=opt, partial=[], results=perms,
+                 players_needed=players_needed, scheme_used=scheme_used,
+                 some_counter=field_counter, used_counters=[])
+
+    # Map into ids
+    roles2id = [RL_MAP[rl] for c in perms for rl in c]
+    id_array = np.array(roles2id).reshape(-1, len(list_of_roles[0]))
+    return np.sort(id_array, axis=1)
+
+
+def scheme_matrix_and_nrepeat(players_needed: int, scheme_used: str,
+                              field_counter: Counter, is_adapted: bool,
+                              counting_malus: bool, number_of_a: int,
+                              number_of_pc: int) -> tuple:
+
+    def adapt_roles(scheme: str, list_of_roles: list) -> list:
+
+        original = split_roles(list_of_options=list_of_roles, by='/')
+        options_per_role = dict(dbf.db_select(table='malus',
+                                              columns=['role', 'malus'],
+                                              where=''))
+        options_per_role = {k: v.split(';') for k, v in
+                            options_per_role.items()}
+
+        special_schemes = ['4-1-4-1']
+        if scheme not in special_schemes:
+            options_per_role['T'] = options_per_role['T1']
+            options_per_role['W'].remove('T1')
+        else:
+            options_per_role['T'] = options_per_role['T2']
+            options_per_role['W'].remove('T')
+            options_per_role['W'].remove('T1')
+        del options_per_role['T1'], options_per_role['T2']
+
+        adapted = []
+        for orig in original:
+            opt = []
+            for el in orig:
+                tmp = [el] + [options_per_role[rl] for rl in el]
+                res = list(set([rl for ls in tmp for rl in ls]))
+                opt.append('/'.join(res))
+            adapted.append(opt)
+        return adapted
+
+    def remove_attackers_from_scheme(all_roles: np.array,
+                                     pc_in_field: int,
+                                     a_in_field: int) -> list:
+
+        res = []
+        for opt in all_roles:
+            opt = list(opt)
+            pc_copy = pc_in_field
+            a_copy = a_in_field
+
+            # First remove Pc
+            if count_roles(which_roles=['A/Pc'], list_of_roles=opt):
+                for _ in range(pc_in_field):
+                    opt.remove('A/Pc')
+                    pc_copy -= 1
+            # Pc can not be adapted to other roles so they don't fit in the
+            # scheme option, option is not valid
+            if pc_copy:
+                continue
+
+            # Then remove A: first look for A/Pc
+            n = count_roles(which_roles=['A/Pc'], list_of_roles=opt)
+            for _ in range(n):
+                opt.remove('A/Pc')
+                a_copy -= 1
+
+            # Pure A
+            n = count_roles(which_roles=['A'], list_of_roles=opt)
+            for _ in range(n):
+                opt.remove('A')
+                a_copy -= 1
+
+            # Finally W/A and T/A since they are never together
+            if a_copy and a_copy <= count_roles(['W/A', 'T/A'], opt):
+                a = [rl for rl in opt if 'A' in rl][:a_copy]
+                for rl in a:
+                    opt.remove(rl)
+                    a_copy -= 1
+            if a_copy:
+                continue
+
+            res.append(opt)
+
+        return res
+
+    roles_in_scheme = dbf.db_select(
+            table='schemes_details',
+            columns=['details'],
+            where=f'scheme = "{scheme_used}"')[0].split(', ')[1:]
+
+    # To handle the case when lineup has less than 11 players we need to create
+    # all the combinations of the original lineup. Most of the times all
+    # players will play so there will be only 1 combination
+    roles_in_scheme = list(itertools.combinations(roles_in_scheme,
+                                                  players_needed))
+    roles_in_scheme = [sorted(list(t)) for t in roles_in_scheme]
+    roles_in_scheme = np.unique(np.array(roles_in_scheme), axis=0)
+
+    if is_adapted:
+        roles_in_scheme = remove_attackers_from_scheme(
+                all_roles=roles_in_scheme, pc_in_field=number_of_pc,
+                a_in_field=number_of_a)
+
+        if not roles_in_scheme:
+            # It means scheme is not valid
+            return np.array([]), 0
+
+        # When we count malus this adaptation must be skipped
+        if not counting_malus:
+            roles_in_scheme = adapt_roles(scheme=scheme_used,
+                                          list_of_roles=roles_in_scheme)
+
+    id_arr = roles2matrix(players_needed=players_needed,
+                          list_of_roles=roles_in_scheme,
+                          scheme_used=scheme_used,
+                          field_counter=field_counter)
+    return id_arr, id_arr.shape[0]
 
 
 def select_lineup(day, fantateam):
 
-	"""
-	Return 2 lists: the first 11 players and the bench.
-	Only the names, no roles.
+    lineup = dbf.db_select(
+            table='lineups',
+            columns=[f'day_{day}'],
+            where=f'team_name = "{fantateam}"')[0].split(', ')
 
-	:param day: int
-	:param fantateam: str
+    field = lineup[:11]
+    bench = lineup[11:]
 
-	:return: tuple, Ex. (['HANDANOVIC', 'MAGNANI', 'SKRINIAR', 'MIRANDA', ...],
-						 ['MANDZUKIC', 'PAVOLETTI', 'ZIELINSKI', ...])
+    return field, bench
 
-	"""
 
-	lineup = dbf.db_select(
-			table='lineups',
-			columns=[f'day_{day}'],
-			where=f'team_name = "{fantateam}"')[0].split(', ')
+def solution_exists(players_needed: int, scheme_used: str,
+                    roles_in_lineup: list, field_counter: Counter,
+                    is_adapted: bool, number_of_a=0, number_of_pc=0):
 
-	field = lineup[:11]
-	bench = lineup[11:]
+    lineup_mtx, n_tiles = lineup_matrix_and_ntiles(
+            players_needed=players_needed, roles_in_lineup=roles_in_lineup,
+            scheme_used=scheme_used, field_counter=field_counter)
 
-	return field, bench
+    scheme_mtx, n_repeat = scheme_matrix_and_nrepeat(
+            players_needed=players_needed, scheme_used=scheme_used,
+            field_counter=field_counter, is_adapted=is_adapted,
+            counting_malus=False, number_of_a=number_of_a,
+            number_of_pc=number_of_pc)
 
+    # This check is only needed for adapted solutions
+    if is_adapted and not scheme_mtx.sum():
+        return np.array([]), np.array([])
 
-def filter_for_pc(players_in_field, subst):
+    lineup_mtx_full = np.repeat(lineup_mtx, n_repeat, axis=0)
+    scheme_mtx_full = np.tile(scheme_mtx, (n_tiles, 1))
 
-	"""
-	Remove players from the bench, when possible, to make the process faster.
-	If 2 Pc or 2 A + 1 Pc are already in the field, no more A or Pc are allowed
-	and so they are removed from the bench, if present.
+    all_res = (lineup_mtx_full == scheme_mtx_full).all(axis=1)
 
-	:param players_in_field: list, Ex. [('MAGNANI', 'Dc'), ...]
-	:param subst: list, [('MANDZUKIC', 'Pc'), ('ZIELINSKI', 'C;T'), ...)]
+    if not is_adapted:
+        return all_res.any()
 
-	:return: LIST, EX. [('ZIELINSKI', 'C;T'), ...)]
+    return ((lineup_mtx_full, all_res) if all_res.any() else
+            (np.array([]), np.array([])))
 
-	"""
 
-	pc_already_in_field = sum([1 for _, rl in players_in_field if rl == 'Pc'])
-	a_already_in_field = sum([1 for _, rl in players_in_field if rl == 'A'])
+def split_roles(list_of_options: list, by: str) -> list:
+    return [[rl.split(by) for rl in list_of_roles] for
+            list_of_roles in list_of_options]
 
-	cond1 = pc_already_in_field == 2
-	cond2 = pc_already_in_field == 1 and a_already_in_field == 2
 
-	if cond1 or cond2:
-		subst = [el for el in subst if el[1] != 'Pc']
-		subst = [(nm, rl.replace(';A', '')) for nm, rl in subst if rl != 'A']
+def too_many_attackers(list_of_roles: list) -> bool:
 
-	return subst
+    # It is not possible to play with 3 Pc
+    pc_count = sum([1 for i in list_of_roles if i == 'Pc'])
+    cond1 = pc_count == 3
 
+    # It is not possible to play with 2 Pc + A
+    a_count = sum([1 for i in list_of_roles if i == 'A'])
+    cond2 = pc_count == 2 and a_count > 0
 
-def optimal(scheme, field_with_roles, bench_with_roles,
-            n_substitutions, n_players):
+    # It is not possible to play with 2 Pc + >1 T
+    t_count = sum([1 for i in list_of_roles if i == 'T'])
+    ta_count = sum([1 for i in list_of_roles if i == 'T/A'])
+    cond3 = pc_count == 2 and (t_count + ta_count) > 1
 
-	"""
-	Look for an optimal solution.
+    # It is not possible to play with 1 Pc + >2 A
+    cond4 = pc_count + a_count > 3
 
-	:param scheme: str, Ex. '4-3-3'
-	:param field_with_roles: list, Ex. [('ASAMOAH', 'Ds;E'), ...]
-	:param bench_with_roles: list, Ex. [('DE ROON', 'M;C'), ...]
-	:param n_substitutions: int
-	:param n_players: int, players to deploy
+    return True if (cond1 | cond2 | cond3 | cond4) else False
 
 
-	:return: tuple, (lineup, scheme) if found else (None, None)
-
-	"""
-
-	# Create all the combinations from bench
-	substitutes = list(combinations(bench_with_roles, n_substitutions))
-
-	# Extract the roles allowed in the scheme and create the combinations
-	scheme_details = dbf.db_select(
-			table='schemes_details',
-			columns=['details'],
-			where=f'scheme = "{scheme}"')[0].split(', ')[1:]
-
-	schemes_candidates = create_schemes_candidates(scheme_details, n_players)
-
-	# Iterate over each possible group of substitutes
-	for bench_pos, option in enumerate(substitutes):
-
-		# Add it to the players with vote
-		final_field = field_with_roles + list(option)
-		if too_many_pc(final_field):
-			continue
-
-		# Create all the lineups combinations
-		players_candidates = create_players_candidates(final_field,
-		                                               n_players)
-
-		# Each lineup is checked with each possible combination of roles
-		# defined above
-		for lineup in players_candidates:
-
-			lineup_names = [el[0] for el in lineup]
-			lineup_roles = convert_t(scheme, [el[1] for el in lineup],
-			                         mode='forward')
-
-			# Filter the options
-			filtered_sch_cand = filter_schemes_candidates(lineup_roles,
-			                                              schemes_candidates)
-			for candidate in filtered_sch_cand:
-
-				# Transform wings
-				candidate = convert_t(scheme, candidate, mode='forward')
-
-				# Roles which are not covered by this lineup combination
-				uncovered = Counter(candidate) - Counter(lineup_roles)
-				uncovered = flatten_dict(uncovered)
-
-				# If all roles are covered, solution is found
-				if not uncovered:
-					# Transform wings back
-					lineup_roles = convert_t(scheme, lineup_roles,
-					                         mode='back')
-					return list(zip(lineup_names, lineup_roles)), scheme
-
-	return None, None
-
-
-def filter_schemes_candidates(lineup_roles, schemes_cand):
-
-	"""
-	Similar to filter_for_pc but for the schemes candidates.
-
-	:param lineup_roles: list
-	:param schemes_cand: list
-
-	:return: list
-
-	"""
-
-	n_pc = sum([1 for rl in lineup_roles if rl == 'Pc'])
-	n_a = sum([1 for rl in lineup_roles if rl == 'A'])
-
-	filtered = [el for el in schemes_cand if
-	            sum([1 for rl in el if rl == 'Pc']) >= n_pc]
-	filtered = [el for el in filtered if
-	            sum([1 for rl in el if rl == 'A']) >= n_a]
-
-	return filtered
-
-
-def efficient(list_of_schemes, field_with_roles, bench_with_roles,
-              n_substitutions, n_players):
-
-	"""
-	Look for an efficient solution.
-
-	:param list_of_schemes: list, Ex. ['4-3-3', '3-4-3', '3-4-1-2', ...]
-	:param field_with_roles: list, Ex. [('ASAMOAH', 'Ds;E'), ...]
-	:param bench_with_roles: list, Ex. [('DE ROON', 'M;C'), ...]
-	:param n_substitutions: int
-	:param n_players: int, players to deploy
-
-
-	:return: tuple, (lineup, scheme) if found else (None, None)
-
-	"""
-
-	# Create all the combinations from bench
-	substitutes = list(combinations(bench_with_roles, n_substitutions))
-
-	# Iterate over each possible group of substitutes
-	for bench_pos, option in enumerate(substitutes):
-
-		# Add it to the players with vote
-		final_field = field_with_roles + list(option)
-		if too_many_pc(final_field):
-			continue
-
-		# Create all the lineups combinations
-		players_candidates = create_players_candidates(final_field, n_players)
-
-		# Iterate over the schemes
-		for scheme in list_of_schemes:
-			# Extract the roles allowed in the scheme and create the
-			# combinations
-			scheme_details = dbf.db_select(
-					table='schemes_details',
-					columns=['details'],
-					where=f'scheme = "{scheme}"')[0].split(', ')[1:]
-
-			schemes_candidates = create_schemes_candidates(scheme_details,
-			                                               n_players)
-
-			# Each lineup is checked with each possible combination of roles
-			# defined above
-			for lineup in players_candidates:
-
-				lineup_names = [el[0] for el in lineup]
-				lineup_roles = convert_t(scheme, [el[1] for el in lineup],
-				                         mode='forward')
-				filtered_sch_cand = filter_schemes_candidates(lineup_roles,
-				                                              schemes_candidates)
-				for candidate in filtered_sch_cand:
-
-					# Transform wings
-					candidate = convert_t(scheme, candidate, mode='forward')
-
-					# Roles which are not covered by this lineup combination
-					uncovered = Counter(candidate) - Counter(lineup_roles)
-					uncovered = flatten_dict(uncovered)
-
-					# If all roles are covered, solution is found
-					if not uncovered:
-						# Transform wings back
-						lineup_roles = convert_t(scheme, lineup_roles,
-						                         mode='back')
-						return list(zip(lineup_names, lineup_roles)), scheme
-
-	return None, None
-
-
-def adapted(list_of_schemes, field_with_roles, bench_with_roles,
-            n_substitutions, n_players):
-
-	"""
-	Look for an adapted solution.
-
-	:param list_of_schemes: list, Ex. ['4-3-3', '3-4-3', '3-4-1-2', ...]
-	:param field_with_roles: list, Ex. [('ASAMOAH', 'Ds;E'), ...]
-	:param bench_with_roles: list, Ex. [('DE ROON', 'M;C'), ...]
-	:param n_substitutions: int
-	:param n_players: int, players to deploy
-
-
-	:return: tuple, (lineup, scheme) if found else (None, None)
-
-	"""
-
-	best_lineup = None
-	best_scheme = None
-	n_malus = 11          # Initialize number of malus
-
-	# Create all the combinations from bench
-	substitutes = list(combinations(bench_with_roles, n_substitutions))
-
-	# Iterate over each possible group of substitutes
-	for bench_pos, option in enumerate(substitutes):
-
-		# Add it to the players with vote
-		final_field = field_with_roles + list(option)
-		if too_many_pc(final_field):
-			continue
-
-		# Create all the lineups combinations
-		players_candidates = create_players_candidates(final_field,
-		                                               n_players)
-		# Iterate over the schemes
-		for scheme in list_of_schemes:
-
-			# Extract the roles allowed in the scheme and create the combinations
-			scheme_details = dbf.db_select(
-					table='schemes_details',
-					columns=['details'],
-					where=f'scheme = "{scheme}"')[0].split(', ')[1:]
-
-			schemes_candidates = create_schemes_candidates(scheme_details,
-			                                               n_players)
-
-			# Each lineup is checked with each possible combination of roles
-			# defined above
-			for lineup in players_candidates:
-
-				lineup_names = [el[0] for el in lineup]
-				lineup_roles = convert_t(scheme, [el[1] for el in lineup],
-				                         mode='forward')
-				filtered_sch_cand = filter_schemes_candidates(lineup_roles,
-				                                              schemes_candidates)
-				for candidate in filtered_sch_cand:
-
-					# Transform wings
-					candidate = convert_t(scheme, candidate, mode='forward')
-
-					# Roles which are not covered by this lineup combination
-					uncovered = Counter(candidate) - Counter(lineup_roles)
-					uncovered = flatten_dict(uncovered)
-
-					# If all roles are covered, solution is found
-					if not uncovered:
-						# Transform wings back
-						lineup_roles = convert_t(scheme, lineup_roles,
-						                         mode='back')
-						return list(zip(lineup_names, lineup_roles)), scheme
-					# else, check if it is possible to find an adapted
-					# solution
-					# elif (len(uncovered) < n_malus and
-					#       len(uncovered) <= n_substitutions):
-					elif len(uncovered) < n_malus:
-
-						# Roles not used in field
-						available = Counter(lineup_roles) - Counter(candidate)
-						available = flatten_dict(available)
-
-						# Permutations of the uncovered roles
-						uncovered_perm = permutations(uncovered)
-						for perm in uncovered_perm:
-							# To keep track of which role needs to be marked as
-							# 'with malus'
-							indices = []
-
-							# To keep track of the roles already checked
-							already_malus = []
-
-							# To check if a malus has been assigned to all
-							# uncovered roles. If not, permutation is not valid
-							count = 0
-
-							# Check, position-wise, if uncovered roles can be
-							# covered by the roles still available (with malus)
-							for i in range(len(perm)):
-								unc = perm[i]
-								ava = available[i]
-
-								# Select roles which are allowed to cover the
-								# uncovered role
-								unc_comp = dbf.db_select(
-										table='malus',
-										columns=['malus'],
-										where=f'role = "{unc}"')[0]
-								unc_comp = unc_comp.split(';')
-
-								# If role avalable is not between them, skip to
-								# next permutation
-								if ava not in unc_comp:
-									break
-
-								# else, update count and mark the role with the
-								# symbol '*' indicating the malus
-								else:
-									count += 1
-									for k, rl in enumerate(lineup_roles):
-										if (k not in already_malus and
-										   rl == ava):
-
-											indices.append((k, unc + '*'))
-											already_malus.append(k)
-											break
-
-							# All the uncovered roles need to be covered by the
-							# permutation. If not, continue with the next one
-							if count != len(perm):
-								continue
-
-							# If permutation is able to cover all the uncovered
-							# roles, update the parameters
-							n_malus = len(perm)
-							best_scheme = scheme
-
-							# Replace the original roles with the ones marked
-							# with '*'
-							best_roles = lineup_roles.copy()
-							for j, role in indices:
-								best_roles[j] = role
-
-							# Update best_lineup
-							best_lineup = list(zip(lineup_names, best_roles))
-
-	return best_lineup, best_scheme
-
-
-def too_many_pc(players_roles):
-
-	"""
-	Once substitutes are added to players in field, filter if too many Pc.
-	Different from filter_for_pc().
-
-	:param players_roles: list
-
-	:return: bool
-
-	"""
-
-	pc = sum([1 for pl, rl in players_roles if rl == 'Pc'])
-	return True if pc > 2 else False
-
-
-def save_mantra_lineup(day, fantateam, result):
-
-	"""
-	Save final lineup after mantra simulation.
-
-	:param day: int
-	:param fantateam: str
-	:param result: list
-
-	:return: nothing
-
-	"""
-
-	result = [f"{nm}:{rl}" for nm, rl in result]
-	dbf.db_update(
-			table='mantra_lineups',
-			columns=[f'day_{day}'],
-			values=[', '.join(result)],
-			where=f'team_name="{fantateam}"')
-
-
-def add_temporary_lineup_and_scheme_in_db(fantateam, day, lineup, scheme):
-
-	"""
-	Create a valid lineup in the db in order to allow mantra prediction.
-
-	:param fantateam: str
-	:param day: int
-	:param lineup: list
-	:param scheme: str
-
-	"""
-
-	# Fix names in lineup
-	shortlist = dbf.db_select(table='all_players',
-	                          columns=[f'day_{day-1}'],
-	                          where=f'team_name="{fantateam}"')[0]
-	shortlist = shortlist.split(', ')
-	for i, pl in enumerate(lineup):
-		new_pl = dbf.jaccard_result(in_opt=pl,
-		                            all_opt=shortlist,
-		                            ngrm=3)
-		lineup[i] = new_pl
-
-	# Update db
-	dbf.db_update(table='lineups',
-	              columns=[f'day_{day}'],
-	              values=[', '.join(lineup)],
-	              where=f'team_name = "{fantateam}"')
-	dbf.db_update(table='schemes',
-	              columns=[f'day_{day}'],
-	              values=[scheme],
-	              where=f'team_name = "{fantateam}"')
-
-
-def clean_db_from_temporary_data(fantateam, day):
-
-	"""
-	Remove from db the temporary data used for mantra prediction.
-
-	:param fantateam: str
-	:param day: int
-
-	"""
-
-	dbf.db_update(table='lineups',
-	              columns=[f'day_{day}'],
-	              values=[''],
-	              where=f'team_name = "{fantateam}"')
-
-	dbf.db_update(table='schemes',
-	              columns=[f'day_{day}'],
-	              values=[''],
-	              where=f'team_name = "{fantateam}"')
-
-
-def predict_lineup(fantateam, players_out, day, lineup=None, scheme=None):
-
-	"""
-	Calculate the final lineup before all Serie A matches are completed.
-
-	:param fantateam: str
-	:param players_out: list
-	:param day: int
-	:param lineup: list or None
-	:param scheme: str
-
-	"""
-
-	clean_db = True if lineup else False
-
-	# Fix fantateam name
-	all_fantateams = dbf.db_select(table='teams',
-	                               columns=['team_name'],
-	                               where='')
-	fantateam = dbf.jaccard_result(in_opt=fantateam,
-	                               all_opt=all_fantateams,
-	                               ngrm=3)
-
-	# Check if day is already calculated
-	mantra_lineup = dbf.db_select(table='mantra_lineups',
-	                              columns=[f'day_{day}'],
-	                              where=f'team_name="{fantateam}"')
-	if mantra_lineup:
-		print('Day already calculated')
-		return
-
-	# Insert lineup and scheme in the db if missing
-	if lineup:
-		add_temporary_lineup_and_scheme_in_db(fantateam=fantateam,
-		                                      day=day,
-		                                      lineup=lineup,
-		                                      scheme=scheme)
-
-	# Fix the names of the players which are not playing
-	lineup = dbf.db_select(table='lineups',
-	                       columns=[f'day_{day}'],
-	                       where=f'team_name="{fantateam}"')[0]
-	lineup = lineup.split(', ')
-
-	for i, pl in enumerate(players_out):
-		new_pl = dbf.jaccard_result(in_opt=pl,
-		                            all_opt=lineup,
-		                            ngrm=3)
-		players_out[i] = new_pl
-
-	# Add in the database a new entry for the players who will be included in
-	# the lineup
-	for player in lineup:
-		if player not in players_out:
-			dbf.db_insert(table='votes',
-			              columns=['day', 'name', 'alvin'],
-			              values=[day, player, 6])
-
-	# Predict lineup
-	predicted = mantra(day=day,
-	                   fantateam=fantateam,
-	                   starting_players=10,
-	                   roles=True,
-	                   save_lineup=False)
-
-	dbf.db_delete(table='votes', where=f'day={day}')
-	if clean_db:
-		clean_db_from_temporary_data(fantateam=fantateam, day=day)
-
-	# Print results
-	field = lineup[:11]
-	bench = lineup[11:]
-	for (lineup, scheme, malus) in (predicted,):
-		print('Malus: ', malus)
-		print('Scheme: ', scheme)
-		print(f'Players: {len(lineup)}')
-
-		print('\nRegular:')
-		for player in lineup:
-			if player[0] in field:
-				print(f'\t{player}')
-
-		print(f'\nFrom bench:')
-		for player in lineup:
-			if player[0] in bench:
-				print(f'\t{player}')
-
-
-if __name__ == '__main__':
-
-	predict_lineup(fantateam='ciolle',
-	               players_out=['gosens'],
-	               day=10,
-	               lineup=['szczehny',
-	                       'skriniar', 'ligt', 'romero',
-	                       'faraoni', 'kessie', 'bakayoko', 'rabiot', 'gosens',
-	                       'barrow', 'belotti',
-	                       'chiesa', 'correa', 'lammers', 'lazovic',
-	                       'ruggeri', 'mckennie', 'ricci', 'amrabat',
-	                       'ambrosio', 'bastoni', 'buffon', 'pinsoglio'],
-	               scheme='3-5-2'
-	               )
+RL_MAP = {'Dc': 1, 'Dd': 2, 'Ds': 3, 'E': 4, 'M': 5, 'C': 6,
+          'W': 7, 'T': 8, 'A': 9, 'Pc': 10}

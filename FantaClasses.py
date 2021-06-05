@@ -165,16 +165,18 @@ class Match(object):
 					table='mantra_lineups',
 					columns=[f'day_{self.day}'],
 					where=f'team_name="{self.team1.name}"')[0].split(', ')
-			lineup1 = [tuple(el.split(':')) for el in lineup1]
+			malus1 = int(lineup1[0])
+			lineup1 = [tuple(el.split(':')) for el in lineup1[1:]]
 
 			lineup2 = dbf.db_select(
 					table='mantra_lineups',
 					columns=[f'day_{self.day}'],
 					where=f'team_name="{self.team2.name}"')[0].split(', ')
-			lineup2 = [tuple(el.split(':')) for el in lineup2]
+			malus2 = int(lineup2[0])
+			lineup2 = [tuple(el.split(':')) for el in lineup2[1:]]
 
-			malus1 = sum([1 for nm, rl in lineup1 if '*' in rl])
-			malus2 = sum([1 for nm, rl in lineup2 if '*' in rl])
+			# malus1 = sum([1 for nm, rl in lineup1 if '*' in rl])
+			# malus2 = sum([1 for nm, rl in lineup2 if '*' in rl])
 
 			lineup1 = [nm for nm, rl in lineup1]
 			lineup2 = [nm for nm, rl in lineup2]
@@ -183,12 +185,10 @@ class Match(object):
 		except IndexError:
 			lineup1, _, malus1 = mf.mantra(day=self.day,
 			                               fantateam=self.team1.name,
-			                               starting_players=10,
-			                               roles=False)
+			                               starting_players=10)
 			lineup2, _, malus2 = mf.mantra(day=self.day,
 			                               fantateam=self.team2.name,
-			                               starting_players=10,
-			                               roles=False)
+			                               starting_players=10)
 
 		self.update_fantateams_data(lineup1, lineup2, malus1, malus2)
 
@@ -432,7 +432,7 @@ class League(object):
 
 		teams = df.index
 		teams_dict = {team: 0 for team in teams}
-		sub_matches = mf.combinations(teams, 2)
+		sub_matches = mf.itertools.combinations(teams, 2)
 		sub_matches = [set(match) for match in sub_matches]
 
 		for i, day in enumerate(self.schedule):
@@ -1097,11 +1097,11 @@ DAYS = last_day_played()
 
 print(f'Giornate disputate: {DAYS}')
 
-lg = League(fteams=fantateams,
-            a_round=our_round,
-            n_days=DAYS,
-            all_players=players,
-            captain=True,
-            rfactor=True)
-
-lg.create_ranking(double_check=True)
+# lg = League(fteams=fantateams,
+#             a_round=our_round,
+#             n_days=DAYS,
+#             all_players=players,
+#             captain=True,
+#             rfactor=True)
+#
+# lg.create_ranking(double_check=True)
