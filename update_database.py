@@ -12,161 +12,37 @@ from selenium.webdriver.common.by import By
 from selenium import webdriver
 
 
-def add_6_politico_if_needed(day: int) -> None:
-
-	"""
-	Assign 6 to each player of the matches which have not been played.
-	"""
-
-	teams_in_day = set(dbf.db_select(
-			table='votes',
-			columns=['team'],
-			where=f'day = {day}'))
-	if len(teams_in_day) == 20:
-		return
-
-	all_teams = set(dbf.db_select(table='votes', columns=['team'], where=''))
-	missing = all_teams - teams_in_day
-
-	votes_of_day = dbf.db_select(
-			table='votes',
-			columns=['day', 'name', 'team', 'alvin', 'gf',
-			         'gs', 'rp', 'rs', 'rf', 'au', 'amm', 'esp', 'ass',
-			         'regular', 'going_in', 'going_out'],
-			where=f'day = {day}')
-
-	for team in missing:
-		shortlist = dbf.db_select(
-				table='all_players_serie_a',
-				columns=[f'day_{day}'],
-				where=f'team = "{team}"')[0]
-		shortlist = shortlist.split(', ')
-
-		for nm in shortlist:
-			data = (day, nm, team, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
-			votes_of_day.append(data)
-
-	votes_of_day.sort(key=lambda x: x[2])
-	dbf.db_delete(table='votes', where=f'day = {day}')
-
-	for row in votes_of_day:
-		dbf.db_insert(
-				table='votes',
-				columns=['day', 'name', 'team', 'alvin',
-				         'gf', 'gs', 'rp', 'rs', 'rf', 'au', 'amm',
-				         'esp', 'ass', 'regular', 'going_in', 'going_out'],
-				values=[value for value in row])
-
-
-def close_popup(brow: webdriver) -> None:
-
-	accetto = './/button[@class="sc-ifAKCX ljEJIv"]'
-
-	try:
-		wait_clickable(brow, cfg.WAIT, accetto)
-		brow.find_element_by_xpath(accetto).click()
-		time.sleep(5)
-	except TimeoutException:
-		pass
-
-
 def find_matches(brow: webdriver) -> (list, bool):
-
-	# To know if absolute points need to be scraped. It will be False when
-	# scraping lineups of the current day, still incomplete
-	day_is_closed = True
-
-	# Find all matches
-	matches = brow.find_elements_by_xpath(
-			'.//div[contains(@class, "match-details card calculated")]')
-	if not matches:
-		# If day it is not concluded it has a different attribute
-		matches = brow.find_elements_by_xpath(
-				'.//div[contains(@class, "match-details")]')
-		day_is_closed = False
-
-	return matches, day_is_closed
+	matches_path = './/div[contains(@class, "match-details card calculated")]'
+	return brow.find_elements_by_xpath(matches_path)
 
 
 def format_player_name(player_name: str) -> str:
 	return player_name.strip().upper().replace('.', '').replace(' *', '')
 
 
-def get_lineup(regular_elem: webdriver, bench_elem: webdriver) -> (str, str):
-
-	captain = None
-	vice = None
-	complete_lineup = []
-
-	players = regular_elem.find_elements_by_xpath(
-			'.//tr[contains(@class, "player-list-item")]')
-	players += bench_elem.find_elements_by_xpath(
-			'.//tr[contains(@class, "player-list-item")]')[:-1]
-	for player in players:
-		name = get_player_name(player_elem=player)
-		complete_lineup.append(name)
-
-		try:
-			player.find_element_by_xpath(
-					'.//li[@data-original-title="Capitano"]')
-			captain = name
-		except NoSuchElementException:
-			pass
-
-		try:
-			player.find_element_by_xpath(
-					'.//li[@data-original-title="Vice capitano"]')
-			vice = name
-		except NoSuchElementException:
-			pass
-
-	captains = f'{captain}, {vice}'.upper()
-	complete_lineup = ', '.join(complete_lineup).upper()
-
-	return captains, complete_lineup
+def get_team_name(brow: webdriver, match_header: webdriver) -> str:
+	scroll_to_element(brow=brow, element=match_header)
+	return match_header.text.split('\n')[0]
 
 
-def get_match_data(brow: webdriver, match_element: webdriver) -> zip:
+def get_points(brow: webdriver, match_table: webdriver) -> (float, float):
+	scroll_to_element(brow=brow, element=match_table)
+	data = match_table.text.split('ALTRI PUNTI\n')[1].split('\n')
 
-	scroll_to_element(brow, match_element)
-	teams = match_element.find_elements_by_xpath(
-			'.//h4[@class="media-heading ellipsis"]')
-	schemes = match_element.find_elements_by_xpath('.//h5')
-	first11 = match_element.find_elements_by_xpath(
-			'.//table[@id="formationTable"]')
-	reserves = match_element.find_elements_by_xpath(
-			'.//table[@id="releaseTable"]')
-	points = match_element.find_elements_by_xpath(
-			'.//div[@class="team-main-info"]')
-	time.sleep(1)
+	if 'Modificatore Rendimento' in data:
+		idx = data.index('Modificatore Rendimento') + 1
+		r_points = float(data[idx])
+	else:
+		r_points = 0.
 
-	return zip(teams, schemes, first11, reserves, points)
+	if 'Bonus Capitano' in data:
+		idx = data.index('Bonus Capitano') + 1
+		c_points = float(data[idx])
+	else:
+		c_points = 0.
 
-
-def get_player_name(player_elem: webdriver) -> str:
-
-	name = player_elem.find_element_by_xpath(
-			'.//span[@class="player-name ellipsis"]')
-	name = name.get_attribute('innerText')
-
-	return format_player_name(player_name=name)
-
-
-def get_scheme(scheme_elem: webdriver) -> str:
-	return scheme_elem.get_attribute('innerText').strip().split('\n')[0]
-
-
-def get_abs_points(points_elem: webdriver) -> float:
-	return float(points_elem.get_attribute('innerText').strip().split('\n')[0])
-
-
-def get_team_name(brow: webdriver, team_element: webdriver) -> str:
-
-	nm = ''
-	while not nm:
-		scroll_to_element(brow, team_element)
-		nm = team_element.text.strip()
-	return nm
+	return r_points, c_points, float(data[-2])
 
 
 def last_day_played() -> int:
@@ -230,107 +106,101 @@ def manage_adblock() -> webdriver:
 	return brow
 
 
-def scrape_lineups_schemes_points() -> webdriver:
+def activate_scrolling(brow: webdriver, element: webdriver or None,
+                       activation_path: str) -> None:
 
-	"""
-	Scrape lineups, schemes and absolute points.
-	"""
+	if not element:
+		some_element = brow.find_element_by_xpath(activation_path)
+	else:
+		some_element = element.find_element_by_xpath(activation_path)
+	time.sleep(1)
+	scroll_to_element(brow=brow, element=some_element)
+	time.sleep(1)
 
-	brow = manage_adblock()
+
+def extract_and_store_points(brow: webdriver, match_table: webdriver,
+                             which_day: int, which_team: str) -> str:
+
+	path = f'.//div[contains(@class, "{which_team}")]'
+	header, table = match_table.find_elements_by_xpath(path)
+	team_name = get_team_name(brow=brow, match_header=header)
+	r_points, c_points, tot_points = get_points(
+			brow=brow,
+			match_table=table
+	)
+
+	dbf.db_update(
+			table='rfactor_points',
+			columns=[f'day_{which_day}'],
+			values=[r_points],
+			where=f'team_name = "{team_name}"'
+	)
+
+	dbf.db_update(
+			table='captain_points',
+			columns=[f'day_{which_day}'],
+			values=[c_points],
+			where=f'team_name = "{team_name}"'
+	)
+
+	dbf.db_update(
+			table='absolute_points',
+			columns=[f'day_{which_day}'],
+			values=[tot_points - r_points - c_points],
+			where=f'team_name = "{team_name}"'
+	)
+
+	return team_name
+
+
+def scrape_lineups_schemes_points(brow: webdriver) -> webdriver:
 
 	starting_day = last_day_played() + 1
-	for day in range(starting_day, 36):
+	for day in range(starting_day, cfg.N_DAYS+1):
 
-		brow.get(f'{cfg.BASE_URL}formazioni/{day}')
+		brow.get(f'{cfg.FANTASCANDALO_URL}formazioni/{day}')
 
-		if day == starting_day:
-			close_popup(brow)
-
-		if wrong_day_for_lineups(brow=brow, day_to_scrape=day):
+		if no_more_days_to_scrape(brow=brow, day_to_scrape=day):
 			return brow
 
+		# To activate scrolling
+		activ_path = './/h4[@class="has-select clearfix flex"]'
+		activate_scrolling(brow=brow, element=None, activation_path=activ_path)
+
 		# Find all matches
-		matches, scrape_points = find_matches(brow=brow)
+		matches = find_matches(brow=brow)
 
-		# Iterate the matches and update database
-		for match in matches:
+		# Update database
+		for i, match in enumerate(matches, 1):
 
-			match_data = get_match_data(brow=brow, match_element=match)
+			home_team = extract_and_store_points(
+					brow=brow,
+					match_table=match,
+					which_day=day,
+					which_team='home'
+			)
 
-			for team, scheme, regular, bench, abs_points in match_data:
+			away_team = extract_and_store_points(
+					brow=brow,
+					match_table=match,
+					which_day=day,
+					which_team='away'
+			)
 
-				team_name = get_team_name(brow=brow, team_element=team)
+			dbf.db_update(
+					table='real_league',
+					columns=[f'day_{day}'],
+					values=[f'{home_team} - {away_team}'],
+					where=f'match_id = {i}'
+			)
 
-				captains, complete_lineup = get_lineup(regular_elem=regular,
-				                                       bench_elem=bench)
-
-				dbf.db_update(
-						table='captains',
-						columns=[f'day_{day}'],
-						values=[captains],
-						where=f'team_name="{team_name}"')
-
-				dbf.db_update(
-						table='lineups',
-						columns=[f'day_{day}'],
-						values=[complete_lineup],
-						where=f'team_name="{team_name}"')
-
-				dbf.db_update(
-						table='schemes',
-						columns=[f'day_{day}'],
-						values=[get_scheme(scheme_elem=scheme)],
-						where=f'team_name="{team_name}"')
-
-				if scrape_points:
-					dbf.db_update(
-							table='absolute_points',
-							columns=[f'day_{day}'],
-							values=[get_abs_points(points_elem=abs_points)],
-							where=f'team_name="{team_name}"')
-
-	return brow
-
-
-def scrape_allplayers_fantateam(brow: webdriver) -> webdriver:
-
-	"""
-	Scrape the complete set of players per each fantateam, day by day.
-	"""
-
-	# Go the webpage
-	brow.get(f'{cfg.BASE_URL}rose')
-
-	# Wait for this element to be visible
-	check = './/h4[@class="has-select clearfix public-heading"]'
-	wait_visible(brow, cfg.WAIT, check)
-
-	# Find all the tables containing the shortlists
-	shortlists = ('.//li[contains(@class,'
-	              '"list-rosters-item raised-2 current-competition-team")]')
-	shortlists = brow.find_elements_by_xpath(shortlists)
-	for shortlist in shortlists:
-
-		team_elem = shortlist.find_element_by_xpath('.//h4')
-		team_name = team_elem.get_attribute('innerText').strip()
-
-		# Names containers
-		players = []
-		names = shortlist.find_elements_by_xpath('.//td[@data-key="name"]')
-		for player in names:
-			name = player.get_attribute('innerText')
-			name = format_player_name(player_name=name)
-			players.append(name)
-
-		# Update "all_players" table
-		dbf.db_update(
-				table='all_players',
-				columns=[f'day_{last_day_played()}'],
-				values=[', '.join(players)],
-				where=f'team_name = "{team_name}"')
-
-		# Update "stats" table
-		update_players_status_in_stats(team_name, players)
+			# To activate scrolling
+			activ_path = './/button[contains(@class, "share-facebook")]'
+			activate_scrolling(
+					brow=brow,
+					element=match,
+					activation_path=activ_path
+			)
 
 	return brow
 
@@ -356,25 +226,19 @@ def update_players_status_in_stats(team_name: str,
 
 def scrape_classifica(brow: webdriver) -> None:
 
-	"""
-	Scrape real data from website in order to check later how the algorithm is
-	working.
-	"""
-
-	brow.get(f'{cfg.BASE_URL}classifica')
+	brow.get(f'{cfg.FANTASCANDALO_URL}classifica')
 	time.sleep(3)
 
 	dbf.empty_table(table='classifica')
 
 	positions = brow.find_elements_by_xpath(
-			'.//table/tbody/tr[contains(@data-logo, ".png")]')
+			'.//table[contains(@class, "table-striped")]/tbody/tr')
 
 	columns = ['team', 'G', 'V', 'N', 'P', 'Gf', 'Gs', 'Dr', 'Pt', 'Tot']
 	for pos in positions:
 		team_data = []
 		scroll_to_element(brow, pos)
-		fields = pos.find_elements_by_xpath(
-			'.//td')[2:-2]
+		fields = pos.find_elements_by_xpath('.//td')[2:-2]
 
 		for field in fields:
 			team_data.append(field.text)
@@ -382,8 +246,6 @@ def scrape_classifica(brow: webdriver) -> None:
 		dbf.db_insert(table='classifica',
 		              columns=columns,
 		              values=team_data)
-
-	brow.close()
 
 
 def scrape_roles_and_players_serie_a(brow: webdriver) -> webdriver:
@@ -645,22 +507,14 @@ def wrong_day_for_votes(day: int) -> bool:
 	return True if len(teams_in_db) == 20 else False
 
 
-def wrong_day_for_lineups(brow: webdriver, day_to_scrape: int) -> bool:
+def no_more_days_to_scrape(brow: webdriver, day_to_scrape: int) -> bool:
 
-	# First check if day in the webpage is the same as the day to scrape
+	# Check if day in the webpage is the same as the day to scrape
 	real_day_path = './/div[@class="filter-option-inner-inner"]'
 	wait_visible(brow, cfg.WAIT, real_day_path)
 	real_day = brow.find_element_by_xpath(real_day_path)
 	real_day = int(real_day.text.split('°')[0])
-
-	if day_to_scrape != real_day:
-		return True
-
-	# Then check if some lineup is missing
-	hidden_path = './/div[contains(@class, "hidden-formation")]'
-	missing_lineups = brow.find_elements_by_xpath(hidden_path)
-
-	return True if missing_lineups else False
+	return True if day_to_scrape != real_day else False
 
 
 def calculate_mv(player: str) -> (int, float):
@@ -817,12 +671,10 @@ def update_market_db():
 
 
 if __name__ == '__main__':
-	# browser = manage_adblock()
-	browser = scrape_lineups_schemes_points()
-	browser = scrape_allplayers_fantateam(browser)
-	scrape_roles_and_players_serie_a(browser)
+	browser = manage_adblock()
+	scrape_lineups_schemes_points(brow=browser)
+	scrape_classifica(brow=browser)
 	scrape_votes(browser)
-	scrape_classifica(browser)
 
 	update_stats()
 	update_market_db()
