@@ -248,65 +248,6 @@ def scrape_classifica(brow: webdriver) -> None:
 		              values=team_data)
 
 
-def scrape_roles_and_players_serie_a(brow: webdriver) -> webdriver:
-
-	"""
-	Scrape all players from each real team in Serie A and their roles.
-	Players are used when 6 politico is needed.
-	"""
-
-	# Players which are already in the db with their roles
-	already_in_db = dbf.db_select(table='roles', columns=['name'], where='')
-
-	# Download excel file with the data
-	# url = 'https://www.fantacalcio.it/quotazioni-fantacalcio/mantra'
-	# brow.get(url)
-	# close_popup(brow)
-	# time.sleep(3)
-	# button = './/button[@id="toexcel"]'
-	# wait_visible(brow, WAIT, button)
-	# brow.find_element_by_xpath(button).click()
-	# time.sleep(2)
-
-	players = open_excel_file(cfg.QUOTAZIONI_FILENAME)
-
-	# Create dict where keys are the teams of Serie A and values are lists
-	# containing their players
-	shortlists = defaultdict(list)
-	for row in range(len(players)):
-		rl, nm, tm = players.loc[row, ['R', 'Nome', 'Squadra']].values
-		nm = format_player_name(player_name=nm)
-		shortlists[tm.upper()].append(nm)
-
-		# Update roles in the db
-		if nm not in already_in_db:
-			dbf.db_insert(
-					table='roles',
-					columns=['name', 'role'],
-					values=[nm, rl])
-
-	# Update the db
-	teams_in_db = dbf.db_select(table='all_players_serie_a',
-	                            columns=['team'],
-	                            where='')
-
-	for team, shortlist in shortlists.items():
-		shortlist = ', '.join(shortlist)
-		if team not in teams_in_db:
-			dbf.db_insert(
-					table='all_players_serie_a',
-					columns=['team', 'day_1'],
-					values=[team.upper(), shortlist])
-		else:
-			dbf.db_update(
-					table='all_players_serie_a',
-					columns=[f'day_{last_day_played()}'],
-					values=[shortlist],
-					where=f'team = "{team}"')
-
-	return brow
-
-
 def regular_or_from_bench(player: webdriver) -> (int, int, int):
 
 	"""
@@ -318,126 +259,91 @@ def regular_or_from_bench(player: webdriver) -> (int, int, int):
 
 	"""
 
-	in_out = player.find_elements_by_xpath('.//td//em')
+	in_out = player.find_elements_by_xpath('.//img')
 	attrs = [i.get_attribute('title') for i in in_out]
 
 	regular = 0
 	going_in = 0
 	going_out = 0
-	if 'Entrato' not in attrs and 'Uscito' not in attrs:
+	if 'Subentrato' not in attrs and 'Sostituito' not in attrs:
 		regular += 1
-	elif 'Entrato' in attrs and 'Uscito' not in attrs:
+	elif 'Subentrato' in attrs and 'Sostituito' not in attrs:
 		going_in += 1
-	elif 'Entrato' not in attrs and 'Uscito' in attrs:
+	elif 'Subentrato' not in attrs and 'Sostituito' in attrs:
 		regular += 1
 		going_out += 1
-	elif 'Entrato' in attrs and 'Uscito' in attrs:
+	elif 'Subentrato' in attrs and 'Sostituito' in attrs:
 		going_in += 1
 		going_out += 1
 
 	return regular, going_in, going_out
 
 
+def get_yellow_red_cards(player: webdriver) -> (int, int):
+
+	# Select alvin element
+	data = player.find_elements_by_xpath('.//div[@class="pill"]')[1]
+
+	# Yellow card
+	yc_path = './/span[contains(@class, "yellow-card")]'
+	yc = data.find_elements_by_xpath(yc_path)
+	yc = 1 if yc else 0
+
+	# Red card
+	rc_path = './/span[contains(@class, "red-card")]'
+	rc = data.find_elements_by_xpath(rc_path)
+	rc = 1 if rc else 0
+
+	return yc, rc
+
+
+def get_grade(player: webdriver) -> float:
+
+	# Select alvin element
+	data = player.find_elements_by_xpath('.//div[@class="pill"]')[1]
+
+	grade_path = './/span[contains(@class, "player-grade")]'
+	grade_elem = data.find_element_by_xpath(grade_path)
+	grade = grade_elem.get_attribute('data-value')
+
+	# When player did not play enough minutes value is 55 in webpage
+	return float(grade.replace(',', '.')) if grade != '55' else 0.
+
+
 def scrape_votes(brow: webdriver) -> webdriver:
 
-	"""
-	Download the excel file with the votes day by day and update the db.
-	"""
-
-	for day in range(1, last_day_played() + 1):
-
-		if wrong_day_for_votes(day):
-			continue
+	starting_day = last_day_played() + 1
+	for day in range(starting_day, cfg.N_DAYS + 1):
 
 		url = cfg.VOTES_URL + str(day)
 		brow.get(url)
+		time.sleep(3)
 
-		# all_tables = brow.find_elements_by_xpath('.//table[@role="grid"]')
 		all_tables = brow.find_elements_by_xpath(
-				'.//table[contains(@class , "table-ratings")]')
+				'.//table[@class="grades-table"]')
+		if not all_tables:
+			return brow
+
 		for table in all_tables:
-			team = table.find_element_by_xpath('.//th[@class="team-header"]')
-			scroll_to_element(brow, team)
-			team = team.get_attribute('innerText')
+			team = table.find_element_by_xpath(
+					'.//a[contains(@class, "team-name")]').text
 
 			players = table.find_elements_by_xpath('.//tbody/tr')[:-1]
 			for player in players:
+				alvin = get_grade(player)
+				if not alvin:
+					continue
+
+				nm = format_player_name(player_name=player.text)
 				regular, going_in, going_out = regular_or_from_bench(player)
-				data = player.find_elements_by_xpath('.//td')
-				del data[1]
+				amm, esp = get_yellow_red_cards(player)
 
-				nm = data[0].find_element_by_xpath(
-						'.//a').get_attribute('innerText')
-				nm = format_player_name(player_name=nm)
-				alvin = data[2].find_element_by_xpath(
-						'.//span').get_attribute('innerText')
-				color = data[2].find_element_by_xpath(
-						'.//span').get_attribute('class')
-				if 'grey' in color:
-					alvin = 'sv'
-					going_in = 0
-				else:
-					alvin = float(alvin.replace(',', '.'))
-				try:
-					data[2].find_element_by_xpath(
-							'.//span[contains(@class, "trn-r trn-ry absort")]')
-					amm = 1
-				except NoSuchElementException:
-					amm = 0
-				try:
-					data[2].find_element_by_xpath(
-							'.//span[contains(@class, "trn-r trn-rr absort")]')
-					esp = 1
-				except NoSuchElementException:
-					esp = 0
-
-				try:
-					gf = data[6].find_element_by_xpath(
-							'.//span').get_attribute('innerText')
-					gf = 0 if gf == '-' else gf
-				except NoSuchElementException:
-					gf = 0
-				try:
-					rf = data[7].find_element_by_xpath(
-							'.//span').get_attribute('innerText')
-					rf = 0 if rf == '-' else rf
-				except NoSuchElementException:
-					rf = 0
-				try:
-					gs = data[8].find_element_by_xpath(
-							'.//span').get_attribute('innerText')
-					gs = 0 if gs == '-' else gs
-				except NoSuchElementException:
-					gs = 0
-				try:
-					rp = data[9].find_element_by_xpath(
-							'.//span').get_attribute('innerText')
-					rp = 0 if rp == '-' else rp
-				except NoSuchElementException:
-					rp = 0
-				try:
-					rs = data[10].find_element_by_xpath(
-							'.//span').get_attribute('innerText')
-					rs = 0 if rs == '-' else rs
-				except NoSuchElementException:
-					rs = 0
-				try:
-					au = data[11].find_element_by_xpath(
-							'.//span').get_attribute('innerText')
-					au = 0 if au == '-' else au
-				except NoSuchElementException:
-					au = 0
-				try:
-					ass = data[12].find_element_by_xpath(
-							'.//span').get_attribute('innerText')
-					if ass == '-':
-						ass = 0
-					elif len(ass) == 1:
-						ass = int(ass)
-					else:
-						ass = int(ass[0])
-				except NoSuchElementException:
-					ass = 0
+				# Bonus and malus
+				bn_ml = player.find_elements_by_xpath(
+						'.//span[contains(@class, "player-bonus")]')
+				bn_ml = [i.get_attribute('data-value') for i in bn_ml]
+				bn_ml = [int(i) for i in bn_ml]
+				gf, gs, au, rf, rs, rp, ass = bn_ml
 
 				# Update db
 				dbf.db_insert(
@@ -451,7 +357,6 @@ def scrape_votes(brow: webdriver) -> webdriver:
 						        esp, ass, regular, going_in,
 						        going_out])
 
-		add_6_politico_if_needed(day)
 	return brow
 
 
@@ -525,7 +430,7 @@ def calculate_mv(player: str) -> (int, float):
 
 	votes = dbf.db_select(table='votes',
 	                      columns=['alvin'],
-	                      where=f'name = "{player}" AND alvin != "sv"')
+	                      where=f'name = "{player}"')
 	matches = len(votes)
 	return (matches, round(sum(votes)/matches, 2)) if matches else (0, 0.0)
 
@@ -612,8 +517,9 @@ def update_stats() -> None:
 	players = open_excel_file(cfg.QUOTAZIONI_FILENAME)
 
 	for row in range(players.shape[0]):
-		roles, name, team, price = players.iloc[row][['R', 'Nome',
-		                                              'Squadra', 'Qt. A']]
+		roles, name, team, price = players.iloc[row][
+			['RM', 'Nome', 'Squadra', 'Qt.A M']
+		]
 		name = format_player_name(player_name=name)
 		matches, mv = calculate_mv(name)
 		bonus = calculate_all_bonus(name)
@@ -630,7 +536,6 @@ def update_stats() -> None:
 			                      going_in, going_out, price],
 			              where=f'name = "{name}"')
 		else:
-			# print('New name for stats: ', name)
 			dbf.db_insert(table='stats',
 			              columns=['name', 'team', 'roles', 'status', 'mv',
 			                       'mfv', 'regular', 'going_in', 'going_out',
@@ -671,10 +576,11 @@ def update_market_db():
 
 
 if __name__ == '__main__':
-	browser = manage_adblock()
-	scrape_lineups_schemes_points(brow=browser)
-	scrape_classifica(brow=browser)
-	scrape_votes(browser)
+	# browser = manage_adblock()
+	# scrape_votes(browser)
+	# scrape_lineups_schemes_points(brow=browser)
+	# scrape_classifica(brow=browser)
 
-	update_stats()
-	update_market_db()
+	if os.path.isfile(cfg.QUOTAZIONI_FILENAME):
+		update_stats()
+		update_market_db()

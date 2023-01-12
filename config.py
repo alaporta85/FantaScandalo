@@ -7,6 +7,9 @@ dbase2 = '/Users/andrea/Desktop/Cartelle/Bots/FantAstaBot/fanta_asta_db.db'
 CHROME_PATH = os.getcwd() + '/chromedriver'
 WAIT = 10
 FANTASCANDALO_URL = 'https://leghe.fantacalcio.it/fantascandalo/'
+VOTES_URL = 'https://www.fantacalcio.it/voti-fantacalcio-serie-a/2022-23/'
+QUOTAZIONI_FILENAME = ('/Users/andrea/Downloads/Quotazioni_' +
+                       'Fantacalcio_Stagione_2022_23.xlsx')
 
 # extra_functions.py
 ALL_LEAGUES = ('/Users/andrea/Desktop/Cartelle/FantaScandalo/'
