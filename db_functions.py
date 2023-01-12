@@ -5,7 +5,7 @@ from nltk.util import ngrams
 import config as cfg
 
 
-def empty_table(table: str, database: str = cfg.dbase1):
+def empty_table(table: str, database: str = cfg.db_league):
 
     db, c = start_db(database)
 
@@ -16,7 +16,7 @@ def empty_table(table: str, database: str = cfg.dbase1):
     db.close()
 
 
-def db_delete(table: str, where: str, database: str = cfg.dbase1):
+def db_delete(table: str, where: str, database: str = cfg.db_league):
 
     db, c = start_db(database)
 
@@ -28,7 +28,7 @@ def db_delete(table: str, where: str, database: str = cfg.dbase1):
 
 
 def db_insert(table: str, columns: list, values: list,
-              database: str = cfg.dbase1):
+              database: str = cfg.db_league):
 
     db, c = start_db(database)
 
@@ -42,7 +42,7 @@ def db_insert(table: str, columns: list, values: list,
 
 
 def db_select(table: str, columns: list, where: str,
-              database: str = cfg.dbase1):
+              database: str = cfg.db_league):
 
     db, c = start_db(database)
 
@@ -62,7 +62,7 @@ def db_select(table: str, columns: list, where: str,
 
 
 def db_update(table: str, columns: list, values: list, where: str,
-              database: str = cfg.dbase1):
+              database: str = cfg.db_league):
 
     db, c = start_db(database)
 

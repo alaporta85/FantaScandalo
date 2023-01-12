@@ -4,8 +4,6 @@ import db_functions as dbf
 import config as cfg
 import pandas as pd
 from openpyxl import load_workbook
-from collections import defaultdict
-from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as ec
 from selenium.webdriver.common.by import By
@@ -205,25 +203,6 @@ def scrape_lineups_schemes_points(brow: webdriver) -> webdriver:
 	return brow
 
 
-def update_players_status_in_stats(team_name: str,
-                                   list_of_players: list) -> None:
-
-	# First set all players of team as FREE
-	dbf.db_update(
-			table='stats',
-			columns=['status'],
-			values=['FREE'],
-			where=f'status = "{team_name}"')
-
-	# Then update the status
-	for player in list_of_players:
-		dbf.db_update(
-				table='stats',
-				columns=['status'],
-				values=[team_name],
-				where=f'name = "{player}"')
-
-
 def scrape_classifica(brow: webdriver) -> None:
 
 	brow.get(f'{cfg.FANTASCANDALO_URL}classifica')
@@ -374,18 +353,6 @@ def scroll_to_element(brow: webdriver, element: webdriver,
 			element)
 
 
-def wait_clickable(brow: webdriver, seconds: int, element_path: str) -> None:
-
-	"""
-	Forces the script to wait for the element to be clickable before doing
-	any other action.
-	"""
-
-	WebDriverWait(
-			brow, seconds).until(ec.element_to_be_clickable(
-					(By.XPATH, element_path)))
-
-
 def wait_visible(brow: webdriver, seconds: int, element_path: str) -> None:
 
 	"""
@@ -396,20 +363,6 @@ def wait_visible(brow: webdriver, seconds: int, element_path: str) -> None:
 	WebDriverWait(
 			brow, seconds).until(ec.visibility_of_element_located(
 					(By.XPATH, element_path)))
-
-
-def wrong_day_for_votes(day: int) -> bool:
-
-	"""
-	Check if we need to scrape votes relative to 'day'.
-	"""
-
-	teams_in_db = set(dbf.db_select(
-			table='votes',
-			columns=['team'],
-			where=f'day = {day}'))
-
-	return True if len(teams_in_db) == 20 else False
 
 
 def no_more_days_to_scrape(brow: webdriver, day_to_scrape: int) -> bool:
@@ -546,41 +499,12 @@ def update_stats() -> None:
 	os.remove(cfg.QUOTAZIONI_FILENAME)
 
 
-def update_market_db():
-
-	"""
-	Update the db used for market.
-	"""
-
-	# Update table "classifica"
-	cols = ['team', 'G', 'V', 'N', 'P', 'Gf', 'Gs', 'Dr', 'Pt', 'Tot']
-	dbf.empty_table(table='classifica', database=cfg.dbase2)
-	data = dbf.db_select(table='classifica', columns=cols, where='')
-	for el in data:
-		dbf.db_insert(
-				table='classifica',
-				columns=cols,
-				values=el,
-				database=cfg.dbase2)
-
-	# Update table "players"
-	cols = ['name', 'team', 'roles', 'price', 'status']
-	dbf.empty_table(table='players', database=cfg.dbase2)
-	data = dbf.db_select(table='stats', columns=cols, where='')
-	for el in data:
-		dbf.db_insert(
-				table='players',
-				columns=[f'player_{i}' for i in cols],
-				values=el,
-				database=cfg.dbase2)
-
-
 if __name__ == '__main__':
-	# browser = manage_adblock()
-	# scrape_votes(browser)
-	# scrape_lineups_schemes_points(brow=browser)
-	# scrape_classifica(brow=browser)
+
+	browser = manage_adblock()
+	scrape_votes(browser)
+	scrape_lineups_schemes_points(brow=browser)
+	scrape_classifica(brow=browser)
 
 	if os.path.isfile(cfg.QUOTAZIONI_FILENAME):
 		update_stats()
-		update_market_db()

@@ -554,12 +554,12 @@ import pickle
 with open('res1.pickle', 'wb') as handle:
 	pickle.dump(r, handle)
 
-# all_pl = dbf.db_select(database=dbase2,
+# all_pl = dbf.db_select(database=db_market,
 #                        table='stats',
 #                        columns_in=['name', 'status'])
 #
 # for pl, st in all_pl:
-# 	dbf.db_update(database=dbase1,
+# 	dbf.db_update(database=db_league,
 # 	              table='players',
 # 	              columns=['player_status'],
 # 	              values=[st],
@@ -567,7 +567,7 @@ with open('res1.pickle', 'wb') as handle:
 #
 # for team in budgets:
 # 	b = budgets[team]
-# 	dbf.db_update(database=dbase1,
+# 	dbf.db_update(database=db_league,
 # 	              table='budgets',
 # 	              columns=['budget_value'],
 # 	              values=[b],
