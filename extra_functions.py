@@ -206,3 +206,18 @@ def random_rounds(number):
 		res.append(real_round)
 
 	return res
+
+
+def random_asymmetric_schedules(n_schedules: int, n_days: int):
+
+	res = []
+	for x in range(n_schedules):
+		schedule = []
+		while len(schedule) < n_days:
+			line = get_random_line(cfg.ALL_LEAGUES)
+			random_round = real_round_from_line(line)
+			schedule += random_round
+		schedule = [[f'{tm1} - {tm2}' for tm1, tm2 in day] for day in schedule]
+		res.append(schedule[:n_days])
+
+	return res

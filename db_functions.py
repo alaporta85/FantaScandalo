@@ -56,7 +56,7 @@ def db_select(table: str, columns: list, where: str,
     db.close()
 
     if len(columns) == 1 and columns[0] != '*':
-        content = [el[0] for el in content if el[0]]
+        content = [el[0] for el in content]
 
     return content
 
