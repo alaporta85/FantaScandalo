@@ -11,7 +11,7 @@ VOTES_URL = 'https://www.fantacalcio.it/voti-fantacalcio-serie-a/2022-23/'
 QUOTAZIONI_FILENAME = ('/Users/andrea/Downloads/Quotazioni_' +
                        'Fantacalcio_Stagione_2022_23.xlsx')
 
-# extra_functions.py
+# utils.py
 ALL_LEAGUES = ('/Users/andrea/Desktop/Cartelle/FantaScandalo/'
                'All_Leagues_8teams.txt')
 

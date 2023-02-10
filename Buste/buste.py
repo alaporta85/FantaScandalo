@@ -6,7 +6,7 @@ from tabulate import tabulate
 from typing import List, Tuple, Dict
 
 import db_functions as dbf
-import extra_functions as ef
+# import utils as ef
 import logging_file as log
 
 

@@ -2,6 +2,6 @@
 *
 
 # except for directories, .py and .db
-
 !*.py
 !*.db
+!*/
