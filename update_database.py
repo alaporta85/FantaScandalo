@@ -505,6 +505,7 @@ if __name__ == '__main__':
 	scrape_votes(browser)
 	scrape_lineups_schemes_points(brow=browser)
 	scrape_classifica(brow=browser)
+	browser.quit()
 
 	if os.path.isfile(cfg.QUOTAZIONI_FILENAME):
 		update_stats()

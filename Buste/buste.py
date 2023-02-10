@@ -1,16 +1,26 @@
 import os
 import re
+import pickle
 import pandas as pd
 from tabulate import tabulate
-from Buste import db_functions as dbf
-from Buste import extra_functions as ef
+from typing import List, Tuple, Dict
+
+import db_functions as dbf
+import extra_functions as ef
+import logging_file as log
 
 
 class Busta(object):
 
-	def __init__(self, team):
+	def __init__(self, fantateam: str):
 
-		self.team = team
+		self.fantateam = fantateam
+		self.n_players = self.get_number_of_players()
+		self.raw_content = self.get_raw_content()
+		self.initial_budget = self.get_budget() + EXTRA_MONEY
+		self.budget = self.get_budget() + EXTRA_MONEY
+		self.pos = [i[0] for i in RANKING].index(self.fantateam) + 1
+		self.abs_points = RANKING[self.pos - 1][1]
 
 		# Players to buy, players to sell and additional money used for each
 		# offer
@@ -21,331 +31,325 @@ class Busta(object):
 		# used in another one
 		self.players_sold = []
 
-		self.only_names = [self.acquisti[i][0] for i in range(1, 6)
-		                   if self.acquisti[i]]
-		data = dbf.db_select(
-				database=dbase1,
-				table='classifica',
-				columns_in=['team', 'Tot'])
-		self.pos = [i[0] for i in data].index(team) + 1
-		self.abs_points = data[self.pos-1][1]
+		# Used to get initial priorities
+		self.only_names = [
+			self.acquisti[i][0] for i in self.acquisti if self.acquisti[i]
+		]
 
-	def open_buste(self):
+	def get_number_of_players(self) -> int:
+		players = dbf.db_select(
+				database=DBASE1,
+				table='players',
+				columns_in=['player_id', 'player_status'],
+				where=f'player_status = "{self.fantateam}"'
+		)
+		return len(players)
 
-		"""
-		Open the .txt file with all the offers of the fantateam and transform
-		it into a dict like:
+	def get_budget(self) -> int:
+		return dbf.db_select(
+				database=DBASE1,
+				table='budgets',
+				columns_in=['budget_value'],
+				where=f'budget_team="{self.fantateam}"'
+		)[0]
 
-			{1: "CASTAN 5, ZAPATA C, 2",
-			 2: "GIACCHERINI 4, LYANCO",
-			 3: "CANCELO 6, 6",
-			 4: "BURDISSO 6, 6",
-			 5: ""
-			 }
+	def get_raw_content(self) -> List[str]:
 
-		Initialize the attributes "acquisti", "cessioni" and "contanti".
+		with open(f'txt/{self.fantateam}.txt', 'r') as file:
+			content = file.readlines()
+		content = [i.replace('\n', '') for i in content]
 
-		Use the function fix_players_names() for the final result.
+		while len(content) < MAX_NUM_OFFERS:
+			content.append('')
+		return content
 
-		:return: dict
+	def open_buste(self) -> Tuple[
+		Dict[int, Tuple[str, int]],
+		Dict[int, Tuple[str]],
+		Dict[int, int]
+	]:
 
-		"""
-
-		# Get the content of the document
-		try:
-			f = open('txt/{}.txt'.format(self.team))
-			content = f.readlines()
-			f.close()
-		except FileNotFoundError:
-			return [], [], []
-
-		# Clean it a bit and append empty strings until it has 5 elements.
+		# Clean it a bit and append empty strings until it has all elements.
 		# Appending '' instead of False or None is useful when we print the
 		# results at the end
-		content = [i.replace(' ', '').replace('\n', '') for i in content]
-		while len(content) < 5:
-			# noinspection PyTypeChecker
-			content.append('')
+		offers = [offer.replace(' ', '') for offer in self.raw_content]
+		while len(offers) < MAX_NUM_OFFERS:
+			offers.append('')
+		offers = {i+1: offers[i] for i in range(MAX_NUM_OFFERS)}
 
-		content = {i + 1: content[i] for i in range(5)}
+		acquisti, cessioni, contanti = {}, {}, {}
+		for idx in offers:
+			# If there is not offer in this position than just add False and go on
+			if not offers[idx]:
+				acquisti[idx] = tuple()
+				cessioni[idx] = tuple()
+				contanti[idx] = 0
+				continue
 
-		return fix_players_names(self.team, content)
+			# Separe all the elements of the offer
+			data = offers[idx].split(',')
+
+			# Separe the player to buy from all the rest
+			player_to_buy, payment = data[0], data[1:]
+
+			# Modify the three dicts with the correct names
+			acquisti[idx] = extract_player_to_buy_and_price(
+					player_to_buy=player_to_buy
+			)
+			cessioni[idx], contanti[idx] = extract_players_to_sell_and_cash(
+					fantateam=self.fantateam,
+					payment=payment
+			)
+
+		return acquisti, cessioni, contanti
 
 
-def budget_is_ok(tm, players_to_sell, price):
+def get_fantateams() -> List[str]:
+	return [name for name, _ in RANKING]
 
-	"""
-	Check whether the team has money to pay the price and buy the player.
-	Used inside buste_results().
 
-	:param tm: str, fantateam
-	:param players_to_sell: list, players sold and used to pay the price.
-							Ex. ['MESSI', 'MARADONA']
-	:param price: int, value of the offer
+def get_ranking():
+	return dbf.db_select(
+			database=DBASE2,
+			table='classifica',
+			columns_in=['team', 'Tot']
+	)
 
-	:return: int if budget is enough, False otherwise
 
-	"""
+def compute_budget_after_selling(
+		fantateam_busta: Busta,
+		players_to_sell: Tuple[str],
+) -> int:
 
-	budg = budgets[tm]
+	# Load fantateam's budget
+	budget_after = fantateam_busta.budget
 
+	# Add values of players ready to be sold
 	for player in players_to_sell:
-
-		budg += dbf.db_select(
-				database=dbase1,
+		budget_after += dbf.db_select(
+				database=DBASE1,
 				table='players',
 				columns_in=['player_price'],
-				where='player_name = "{}"'.format(player))[0]
+				where=f'player_name = "{player}"'
+		)[0]
+	return budget_after
 
-	return budg if price <= budg else False
+
+def budget_is_enough(
+		fantateam_busta: Busta,
+		player_name: str,
+		players_to_sell: Tuple[str],
+		price: int
+) -> bool:
+
+	budget_after = compute_budget_after_selling(
+			fantateam_busta=fantateam_busta,
+			players_to_sell=players_to_sell
+	)
+
+	# Return budget if enough else 0
+	if price <= budget_after:
+		return True
+	else:
+		LOGGER.info(f"Offerta non sufficiente: "
+		            f"{fantateam_busta.fantateam} perde {player_name}")
+		return False
 
 
-def buste_results(modify_db):
+def get_winning_offer(
+		all_offers: List[Tuple[str, str, int, int, float, int]]
+) -> Tuple[str, str, int]:
+	# The winning offer is:
+	#   - The offer with the highest value
+	#   - If tie, the offer with the INITIAL highest priority
+	#   - If tie, the offer of the team with the highest absolute points
+	#   - If tie, the offer of the team with the highest ranking position
+	all_offers.sort(key=lambda x: x[5])
+	all_offers.sort(key=lambda x: x[4], reverse=True)
+	all_offers.sort(key=lambda x: x[3])
+	all_offers.sort(key=lambda x: x[2], reverse=True)
 
-	"""
-	Assign all the players following the rules.
+	# Only fantateams and offer are needed, rest of data is for sorting
+	return all_offers[0][:3]
 
-	:return: dict, results
 
-	"""
+def buste_results(original_buste: Dict[str, Busta]) -> dict:
 
-	results = {i: [] for i in budgets}
-
-	for i in range(1, 6):
+	final_dict = {i: [] for i in FANTATEAMS}
+	for i in range(1, MAX_NUM_OFFERS+1):
 
 		# Assign players until all players in the i-th slot are assigned
 		while True:
-
 			# Select all i-th offers
-			offers = [(nm,
-			           buste[nm].acquisti[i],
-			           buste[nm].only_names.index(buste[nm].acquisti[i][0]),
-			           buste[nm].abs_points,
-			           buste[nm].pos)
-			          for nm in budgets if buste[nm].acquisti[i]]
-
+			offers = [
+				(
+					nm,
+					buste[nm].acquisti[i][0],
+					buste[nm].acquisti[i][1],
+					buste[nm].only_names.index(buste[nm].acquisti[i][0]),
+					buste[nm].abs_points,
+					buste[nm].pos
+				) for nm in final_dict if original_buste[nm].acquisti[i]
+			]
 			if not offers:
 				break
 
-			# Sort them by datetime and value of the offer. This means that it
-			# will be always selected the most expensive player. In case of 2
-			# or more offers with the same value, player will be assigned to
-			# who sent the email first
-			offers.sort(key=lambda x: x[4])
-			offers.sort(key=lambda x: x[3], reverse=True)
-			offers.sort(key=lambda x: x[2])
-			offers.sort(key=lambda x: x[1][1], reverse=True)
+			# Select winning offer and corresponding busta
+			fteam, player, price = get_winning_offer(all_offers=offers)
+			busta = original_buste[fteam]
+			players_to_sell = busta.cessioni[i]
 
-			team, offer, _, _, _ = offers[0]
-			player, price = offer
-			players_to_sell = buste[team].cessioni[i]
+			# To correctly assign a player, we need to check that
+			#   - budget is enough
+			#   - final number of players does not exceed limit
+			#   - players used to pay (if any) are still available
+			if (
+					budget_is_enough(busta, player, players_to_sell, price) and
+					players_dont_exceed(busta, player, players_to_sell) and
+					players_are_available(busta, player, players_to_sell)
+			):
 
-			# To correctly assign a player, we need to check that the players
-			# used to pay (if any) have not been sold in previous offers and
-			# that the budget is enough to cover the price
-			if (type(budget_is_ok(team, players_to_sell, price)) != bool and
-					 players_dont_exceed(team, players_to_sell) and
-					 players_are_available(team, players_to_sell)):
+				# Update players sold
+				busta.players_sold += players_to_sell
 
 				# Update budget of the fantateam who acquired the player
-				budgets[team] = (budget_is_ok(
-						team, players_to_sell, price) - price)
+				new_budget = compute_budget_after_selling(
+						fantateam_busta=busta,
+						players_to_sell=players_to_sell) - price
+				busta.budget = new_budget
 
 				# Update the number of players per team
-				number_of_players_per_team[team] += (1 - len(players_to_sell))
-
-				if modify_db:
-					update_db(team, player, players_to_sell)
+				busta.n_players += (1 - len(players_to_sell))
 
 				# Set its i-th entry to be False
-				buste[team].acquisti[i] = False
+				busta.acquisti[i] = tuple()
 
 				# Update results
-				results[team].append('{}, {}'.format(player, price))
+				final_dict[fteam].append(f'{player}, {price}')
 
 				# Update the offers of the remaining fantateams. Basically we
 				# delete the offers relative to this player and shift all the
 				# rest up
-				offer_is_lost(i, player,
-				              all_teams=[i for i in budgets if i != team])
+				offer_is_lost(
+						player_name=player,
+						losing_fteams=[i for i in FANTATEAMS if i != fteam]
+				)
+
+				if MODIFY_DB:
+					update_db(
+							fantateam=fteam,
+							new_budget=new_budget,
+							player_name=player,
+							players_to_sell=players_to_sell
+					)
 			else:
 				# print(f'{team} not able to pay for {player}')
 				# In case the fantateam is not able to pay the player, we
 				# update its offers and shit them up
-				offer_is_lost(i, player, all_teams=[team])
+				offer_is_lost(player_name=player, losing_fteams=[fteam])
 
 	# Append empty strings for nice printing
-	for i in results:
-		while len(results[i]) < 5:
-			results[i].append('')
+	for i in final_dict:
+		while len(final_dict[i]) < MAX_NUM_OFFERS:
+			final_dict[i].append('')
 
-	return results
+	return final_dict
 
 
-def extract_player_to_buy_and_price(player_to_buy):
+def extract_player_to_buy_and_price(player_to_buy: str) -> Tuple[str, int]:
 
-	"""
-	Take the player written in the .txt and correct its name if mispelled.
-	Used inside fix_players_names().
-
-	:param player_to_buy: str, Ex. "Sczezny20"
-
-	:return: tuple, Ex. (SZCZESNY, 20)
-
-	"""
-
+	# Separate name from price
+	name = re.findall(r'[a-zA-Z]+', player_to_buy)[0]
 	price = re.findall(r'\d+', player_to_buy)[0]
-	player_to_buy = player_to_buy.replace(price, '').upper()
-	all_players = dbf.db_select(
-			database=dbase1,
+
+	# Get all FREE players from db
+	all_free_players = dbf.db_select(
+			database=DBASE1,
 			table='players',
 			columns_in=['player_name'],
-			where=f'player_status = "FREE"')
+			where='player_status = "FREE"'
+	)
 
-	player_to_buy = ef.jaccard_result(player_to_buy, all_players, 3)
+	# Fix the input
+	name = ef.jaccard_result(
+			input_option=name,
+			all_options=all_free_players,
+			ngrm=3
+	)
 
-	return player_to_buy, int(price)
+	return name, int(price)
 
 
-def extract_players_to_sell_and_cash(team, payment):
+def extract_players_to_sell_and_cash(
+		fantateam: str,
+		payment: List[str]
+) -> Tuple[Tuple[str], int]:
 
-	"""
-	Take the players written in the .txt and correct their name if mispelled.
-	Also separe players to sell from the cash.
-	Used inside fix_players_names().
-
-	:param team: str
-
-	:param payment: list, Ex. [Gildias, 2]
-
-	:return: tuple, Ex. ([GIL DIAS], 2)
-
-	"""
+	# Get all fantateam's players
 	all_players = dbf.db_select(
-			database=dbase1,
+			database=DBASE1,
 			table='players',
 			columns_in=['player_name'],
-			where=f'player_status = "{team}"')
+			where=f'player_status = "{fantateam}"'
+	)
 
+	# In the payment, separate players from cash
 	try:
 		cash = re.findall(r'\d+', ''.join(payment))[0]
 		players_to_sell = [i for i in payment if i != cash]
 	except IndexError:
-		cash = 0
+		cash = '0'
 		players_to_sell = payment
 
-	for i in range(len(players_to_sell)):
-		players_to_sell[i] = ef.jaccard_result(players_to_sell[i],
-		                                       all_players, 3)
+	# Fix names
+	for i, name in enumerate(players_to_sell):
+		players_to_sell[i] = ef.jaccard_result(
+				input_option=name,
+				all_options=all_players,
+				ngrm=3
+		)
 
-	return players_to_sell, cash
-
-
-def fix_buste_names():
-
-	"""
-	Fix the name of the .txt file in case it doesn not match the exact name of
-	the fantateam as it appears in the database.
-
-	:return: nothing
-
-	"""
-
-	for filename in os.listdir('txt'):
-		if filename.endswith('.txt'):
-			correct_team = ef.jaccard_result(filename, budgets, 3)
-			os.rename('txt/' + filename, 'txt/{}.txt'.format(correct_team))
+	return tuple(players_to_sell), int(cash)
 
 
-def fix_players_names(team, offers):
+def fix_buste_names() -> None:
 
-	"""
-	Fix the name of the players in all the offers in order to make them match
-	with the database entries.
-	Used inside open_buste().
+	# Wrong names
+	filenames = [file for file in os.listdir('txt') if file.endswith('.txt')]
+	names = map(lambda x: x.split('.')[0], filenames)
 
-	:param team: str
-
-	:param offers: dict, the original offers which have to be fixed. All spaces
-				   are removed previously. Ex:
-
-						{1: "messi60, bonaventua, 40",
-						 2: "cristianoronaldo70, salah, 25",
-						 3: "vieri50, 50",
-						 4: "",
-						 5: ""
-						 }
-
-	:return: 3 dict, representing players to buy, players to sell and cash.
-			 For example, with the dict above the return will be:
-
-			 acquisti = {1: (MESSI, 60),
-			             2: (CRISTIANO RONALDO, 70),
-			             3: (VIERI, 50),
-			             4: False,
-			             5: False
-			             }
-
-			 cessioni = {1: [BONAVENTURA],
-			             2: [SALAH],
-			             3: [],
-			             4: False,
-			             5: False
-			             }
-
-			 contanti = {1: 40,
-			             2: 25,
-			             3: 50,
-			             4: False,
-			             5: False
-			             }
-	"""
-
-	acquisti, cessioni, contanti = {}, {}, {}
-
-	for of in offers:
-
-		# If there is not offer in this position than just add False and go on
-		if not offers[of]:
-			acquisti[of] = False
-			cessioni[of] = False
-			contanti[of] = False
-			continue
-
-		# Separe all the elements of the offer
-		data = offers[of].split(',')
-
-		# Separe the player to buy from all the rest
-		player_to_buy, payment = data[0], data[1:]
-
-		# Modify the three dicts with the correct names
-		acquisti[of] = extract_player_to_buy_and_price(player_to_buy)
-		cessioni[of], contanti[of] = extract_players_to_sell_and_cash(team,
-		                                                              payment)
-
-	return acquisti, cessioni, contanti
+	# Fix
+	for wrong_name in names:
+		correct_team = ef.jaccard_result(
+				input_option=wrong_name,
+				all_options=FANTATEAMS,
+				ngrm=3
+		)
+		old_path = os.path.join('txt', f'{wrong_name}.txt')
+		new_path = os.path.join('txt', f'{correct_team}.txt')
+		os.rename(old_path, new_path)
 
 
-def get_number_of_players():
-
-	teams = dbf.db_select(
-			database=dbase1,
-			table='teams',
-			columns_in=['team_name'])
-
-	res = {i: 0 for i in teams}
-	for team in res:
-		players = dbf.db_select(
-				database=dbase1,
-				table='players',
-				columns_in=['player_id'],
-				where='player_status = "{}"'.format(team))
-		res[team] = len(players)
-
-	return res
+def get_number_of_players() -> Dict[str, int]:
+	players = dbf.db_select(
+			database=DBASE1,
+			table='players',
+			columns_in=['player_id', 'player_status'],
+			where='player_status != "FREE"'
+	)
+	players = [name for _, name in players]
+	return pd.Series(players).value_counts().to_dict()
 
 
-def offer_is_lost(slot, player, all_teams):
+def shift_list_up(index: int, dict_to_shift: dict) -> dict:
+
+	values = list(dict_to_shift.values())
+	values[index:] = values[index + 1:]
+	values.append(False)
+	return {slot: value for slot, value in enumerate(values, 1)}
+
+
+def offer_is_lost(player_name: str, losing_fteams: list) -> None:
 
 	"""
 	When a player is acquired by any team, this function modifies the dicts
@@ -370,205 +374,208 @@ def offer_is_lost(slot, player, all_teams):
 
 	This operates on the three dicts acquisti, cessioni and contanti.
 	Used inside buste_results().
-
-	:param slot: int, slot of the offer
-	:param player: str, player just acquired
-	:param all_teams: list, all the fantateams whose offers need to be checked
-					  and eventually modified
-
-	:return: nothing
-
 	"""
 
-	for tm in all_teams:
+	for fteam in losing_fteams:
 
-		# Start from 'slot' because previous offers must not be modified
-		for i in range(slot, 6):
+		# Loaded every time since it is updated at every iteration
+		updated_slots = [
+			i[0] if i else i for i in buste[fteam].acquisti.values()
+		]
 
-			# If there in no offer in the slot or it is for a different player
-			# we go to the next one
-			if not buste[tm].acquisti[i] or buste[tm].acquisti[i][0] != player:
-				continue
-			else:
+		# No need to shift if player not in offers
+		if player_name not in updated_slots:
+			continue
 
-				# Otherwise we modify all the enties by shifting them up
-				for j in range(i, 6):
-					try:
-						buste[tm].acquisti[j] = buste[tm].acquisti[j + 1]
-						buste[tm].cessioni[j] = buste[tm].cessioni[j + 1]
-						buste[tm].contanti[j] = buste[tm].contanti[j + 1]
-					except KeyError:
-						buste[tm].acquisti[j] = False
-						buste[tm].cessioni[j] = False
-						buste[tm].contanti[j] = False
+		# Identify position of the player inside list of offers
+		idx = updated_slots.index(player_name)
 
-				break
+		# Update all attributes
+		buste[fteam].acquisti = shift_list_up(
+				index=idx, dict_to_shift=buste[fteam].acquisti
+		)
+
+		buste[fteam].cessioni = shift_list_up(
+				index=idx, dict_to_shift=buste[fteam].cessioni
+		)
+
+		buste[fteam].contanti = shift_list_up(
+				index=idx, dict_to_shift=buste[fteam].contanti
+		)
 
 
-def players_are_available(tm, players_to_sell):
+def players_are_available(
+		fantateam_busta: Busta,
+		player_name: str,
+		players_to_sell: Tuple[str]
+) -> bool:
 
 	"""
 	Check whether the players used as payment have already been sold in a
 	previous offer. If not than return True and add them to the list of sold
 	players, else False.
-	Used inside buste_results().
-
-	:param tm: str, name of fantateam
-	:param players_to_sell: list, Ex. [VERDI, INSIGNE]
-
-	:return: bool
-
 	"""
 
-	check = set(players_to_sell) & set(buste[tm].players_sold) == set()
+	check = set(players_to_sell) & set(fantateam_busta.players_sold) == set()
 
 	if check:
-		for player in players_to_sell:
-			buste[tm].players_sold.append(player)
+		return True
+	else:
+		LOGGER.info(f"Pagamento non più valido: "
+		            f"{fantateam_busta.fantateam} perde {player_name}")
+		pass
 
 	return check
 
 
-def players_dont_exceed(team, players_to_sell):
+def players_dont_exceed(
+		fantateam_busta: Busta,
+		player_name: str,
+		players_to_sell: Tuple[str]
+) -> bool:
 
 	players_to_add = 1 - len(players_to_sell)
-	cond = number_of_players_per_team[team] + players_to_add <= MAX_NUM_PLAYERS
-	return cond
+	if fantateam_busta.n_players + players_to_add <= MAX_NUM_PLAYERS:
+		return True
+	else:
+		LOGGER.info(f"Troppi giocatori in rosa: "
+		            f"{fantateam_busta.fantateam} perde {player_name}")
+		return False
 
 
-def print_original(tm):
+def print_results(
+		original_buste: Dict[str, Busta],
+		data_to_print: Dict[str, List[str]]
+) -> None:
 
-	"""
-	Extract the raw content of each .txt for printing.
-	Used inside print_results().
+	# Budgets before buste
+	budgets_dict = {
+		fteam: original_buste[fteam].initial_budget for fteam in data_to_print}
+	print('\nBUDGETS INIZIALI')
+	print(tabulate(pd.DataFrame(budgets_dict, index=[0]), showindex=False,
+	               headers='keys', numalign='center', tablefmt="orgtbl"))
 
-	:param tm: str, fantateam
+	# Create groups
+	n_fteams = len(FANTATEAMS) // 2
+	group1 = FANTATEAMS[:n_fteams]
+	group2 = FANTATEAMS[n_fteams:]
 
-	:return: list, all the offers as written in the .txt
+	original1 = pd.DataFrame(
+			{fteam: original_buste[fteam].raw_content for fteam in group1})
+	original1 = tabulate(
+			tabular_data=original1,
+			showindex=False,
+			headers='keys',
+			tablefmt="orgtbl"
+	)
 
-	"""
+	original2 = pd.DataFrame(
+			{fteam: original_buste[fteam].raw_content for fteam in group2})
+	original2 = tabulate(
+			tabular_data=original2,
+			showindex=False,
+			headers='keys',
+			tablefmt="orgtbl"
+	)
+	print(f'\n{"- " * 80}\n\nBUSTE ORIGINALI')
+	print(f'{original1}\n\n{original2}')
 
-	try:
-		f = open('txt/{}.txt'.format(tm))
-		content = f.readlines()
-		f.close()
-	except FileNotFoundError:
-		return ''
+	data = tabulate(
+			tabular_data=pd.DataFrame(data_to_print),
+			showindex=False,
+			headers='keys',
+			stralign='right',
+			tablefmt="orgtbl"
+	)
+	print(f'{"- " * 80}\n\nESITO BUSTE')
+	print(data)
 
-	content = [i.replace('\n', '') for i in content]
-	while len(content) < 5:
-		# noinspection PyTypeChecker
-		content.append('')
-
-	return content
-
-
-def print_results(modify_db):
-
-	"""
-	Print the final results.
-
-	:return: nothing
-
-	"""
-
-	group1 = ['Real Panaro', 'Bucalina', 'Ac Picchia', 'Fc Roxy']
-	group2 = ['F C Happy Milf', 'Ciolle United', 'FC 104', 'FC BOMBAGALLO']
-
-	original1 = tabulate(pd.DataFrame({i: print_original(i) for i in group1}),
-	                     showindex=False, headers='keys', tablefmt="orgtbl")
-	original2 = tabulate(pd.DataFrame({i: print_original(i) for i in group2}),
-	                     showindex=False, headers='keys', tablefmt="orgtbl")
-	risultati = tabulate(pd.DataFrame(buste_results(modify_db)),
-	                     showindex=False, headers='keys', stralign='right',
-	                     tablefmt="orgtbl")
-	return risultati
-
-	buchi = {i: MIN_NUM_PLAYERS - number_of_players_per_team[i] for i in
-	         budgets}
-	buchi = {i: buchi[i] if buchi[i] > 0 else 0 for i in buchi}
-	info = {i: '{} ({})'.format(budgets[i], buchi[i]) for i in buchi}
-	info = tabulate(pd.DataFrame(info, index=[0]), showindex=False,
-	                headers='keys', numalign='center', tablefmt="orgtbl")
-
-	print('\n{}\n\nBUSTE ORIGINALI\n'.format('- ' * 80))
-	print(original1 + '\n')
-	print(original2)
-	print('\n{}\n\nESITO BUSTE\n'.format('- ' * 80))
-	print(risultati)
-	print('\n{}\n\nSOLDI RIMANENTI (BUCHI)\n'.format('- ' * 80))
+	buchi = {
+		fteam: MIN_NUM_PLAYERS - original_buste[fteam].n_players
+		for fteam in original_buste
+	}
+	buchi = {fteam: buchi[fteam] if buchi[fteam] > 0 else 0 for fteam in buchi}
+	info = {
+		fteam: f'{original_buste[fteam].budget} ({buchi[fteam]})'
+		for fteam in buchi
+	}
+	info = tabulate(
+			tabular_data=pd.DataFrame(info, index=[0]),
+			showindex=False,
+			headers='keys',
+			numalign='center',
+			tablefmt="orgtbl"
+	)
+	print(f'{"- " * 80}\n\nBUDGETS FINALI (BUCHI)')
 	print(info)
 
 
-def update_db(team, player, players_to_sell):
+def update_db(
+		fantateam: str,
+		new_budget: int,
+		player_name: str,
+		players_to_sell: Tuple[str]
+) -> None:
 
-	dbs = [dbase1, dbase2]
-	tables = ['players', 'stats']
-	cols = ['player_status', 'status']
-	wheres = ['player_name', 'name']
+	# Update status of acquired player
+	dbf.db_update(
+			database=DBASE1,
+			table='players',
+			columns=['player_status'],
+			values=[fantateam],
+			where=f'player_name = "{player_name}"'
+	)
 
-	for i in range(2):
+	# Update status of sold players
+	for player in players_to_sell:
+		dbf.db_update(
+				database=DBASE1,
+				table='players',
+				columns=['player_status'],
+				values=['FREE'],
+				where=f'player_name = "{player}"'
+		)
 
-		dbf.db_update(database=dbs[i],
-		              table=tables[i],
-		              columns=[cols[i]],
-		              values=[team],
-		              where=f'{wheres[i]} = "{player}"')
+	# Update fantateam's budget
+	dbf.db_update(
+			database=DBASE1,
+			table='budgets',
+			columns=['budget_value'],
+			values=[new_budget],
+			where=f'budget_team = "{fantateam}"'
+	)
 
-		for pl_name in players_to_sell:
-			dbf.db_update(database=dbs[i],
-			              table=tables[i],
-			              columns=[cols[i]],
-			              values=['FREE'],
-			              where=f'{wheres[i]} = "{pl_name}"')
+	# TODO update stats in DBASE2
 
 
+# Log
+LOGGER = log.set_logging()
+
+# Set paths
+MAIN_DIR = '/Users/andrea/Desktop/Cartelle/Bots'
+DBASE1 = f'{MAIN_DIR}/FantAstaBot/fanta_asta_db.db'
+DBASE2 = f'{MAIN_DIR}/FantaScandalo/fantascandalo_db.db'
+
+# Set constants
 MIN_NUM_PLAYERS = 25
 MAX_NUM_PLAYERS = 32
 EXTRA_MONEY = 20
+MAX_NUM_OFFERS = 5
+MODIFY_DB = False
+RANKING = get_ranking()
+FANTATEAMS = get_fantateams()
 
-main_dir = '/Users/andrea/Desktop/Cartelle'
-dbase1 = f'{main_dir}/Bots/FantAstaBot/fanta_asta_db.db'
-dbase2 = f'{main_dir}/Bots/FantaScandalo/fantascandalo_db.db'
-
-number_of_players_per_team = get_number_of_players()
-
-budgets = dbf.db_select(
-		database=dbase1,
-		table='budgets',
-		columns_in=['budget_team', 'budget_value'])
-budgets = {el[0]: el[1] + EXTRA_MONEY for el in budgets}
-
-print('\nBUDGET INIZIALE\n')
-print(tabulate(pd.DataFrame(budgets, index=[0]), showindex=False,
-               headers='keys', numalign='center', tablefmt="orgtbl"))
-
-
+# Fix filenames
 fix_buste_names()
 
-buste = {i: Busta(i) for i in budgets}
+# Open all buste
+buste = {i: Busta(i) for i in FANTATEAMS}
 
-r = print_results(modify_db=False)
+# Distribute players
+results = buste_results(original_buste=buste)
 
-import pickle
-with open('res1.pickle', 'wb') as handle:
-	pickle.dump(r, handle)
+print_results(original_buste=buste, data_to_print=results)
 
-# all_pl = dbf.db_select(database=db_market,
-#                        table='stats',
-#                        columns_in=['name', 'status'])
-#
-# for pl, st in all_pl:
-# 	dbf.db_update(database=db_league,
-# 	              table='players',
-# 	              columns=['player_status'],
-# 	              values=[st],
-# 	              where=f'player_name = "{pl}"')
-#
-# for team in budgets:
-# 	b = budgets[team]
-# 	dbf.db_update(database=db_league,
-# 	              table='budgets',
-# 	              columns=['budget_value'],
-# 	              values=[b],
-# 	              where=f'budget_team = "{team}"')
+with open('refer.pickle', 'rb') as f:
+	b = pickle.load(f)
+assert results == b

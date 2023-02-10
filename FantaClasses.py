@@ -46,7 +46,6 @@ class Match(object):
 		self.day = day
 		self.use_rfactor = use_rfactor
 		self.use_captain = use_captain
-		self.result = None
 
 		self.play_match()
 
@@ -493,6 +492,10 @@ class Calendar(object):
 		self.max_pt = {ft: 0 for ft in self.fantateams}
 		self.min_pt = {ft: 100 for ft in self.fantateams}
 		self.avg = {ft: 0 for ft in self.fantateams}
+		self.dict_abs_points = generate_points_dict(
+				fantateams=self.fantateams.keys(),
+				n_days=self.n_days
+		)
 
 		self.simulation()
 
@@ -505,17 +508,13 @@ class Calendar(object):
 
 	def simulation(self):
 
-		dict_abs_points = generate_points_dict(
-				fantateams=self.fantateams.keys(),
-				n_days=self.n_days
-		)
 		for i, sched in enumerate(self.schedules, 1):
 
 			fl = FastLeague(
 					fantateams=self.fantateams,
 					schedule=sched,
 					n_days=self.n_days,
-					dict_abs_points=dict_abs_points
+					dict_abs_points=self.dict_abs_points
 			)
 
 			names, points = fl.ranking
@@ -563,39 +562,43 @@ class Calendar(object):
 				subset=['1°(%)', '2°(%)', '3°(%)', '4°(%)',
 				        '5°(%)', '6°(%)', '7°(%)', '8°(%)', 'Media'])
 
-	def specific_round(self, team, position, n_days):
+	def get_result(self, fantateam1: str, fantateam2: str, day: int) -> str:
+
+		abs_points1 = self.dict_abs_points[fantateam1][day-1]
+		abs_points2 = self.dict_abs_points[fantateam2][day-1]
+
+		goals1 = int(max(abs_points1 - 60, 0) // 6)
+		goals2 = int(max(abs_points2 - 60, 0) // 6)
+
+		return f'{goals1} - {goals2}'
+
+	def specific_round(self, fantateam: str, position: int) -> None:
 
 		"""
 		If any, print one of the rounds where team "team" ends in position
 		"position".
-
-		:param team: str
-		:param position: int
-		:param n_days: int
-
 		"""
 
-		res = self.archive[position][team]
+		# Load corresponding calendars and print some info
+		res = self.archive[position][fantateam]
 		if not res:
-			print(f'{team} mai in {position}° posizione.')
+			print(f'{fantateam} mai in {position}° posizione.')
 		else:
 			if len(res) == 1:
 				name = 'campionato'
 			else:
 				name = 'campionati'
 
-			print(f'{team} in {position}° posizione: '
+			print(f'{fantateam} in {position}° posizione: '
 			      f'{len(res)} {name} su {self.n_leagues}.')
 
-			rn = [[f'{tm1} - {tm2}' for tm1, tm2 in el] for el in res[0]]
-
-			rn_complete = ef.generate_schedule(rn, n_days)
-
+			# Create data: match and result
+			a_schedule = res[0]
 			data = []
-			for day, matches in enumerate(rn_complete, 1):
+			for day, matches in enumerate(res[0], 1):
 				for match in matches:
 					tm1, tm2 = match.split(' - ')
-					data.append((match, get_result(tm1, tm2, day)))
+					data.append((match, self.get_result(tm1, tm2, day)))
 
 			new_data = []
 			added = []
@@ -621,12 +624,19 @@ class Calendar(object):
 			df.set_index('N', drop=True, inplace=True)
 			df.index.name = None
 
-			sp = League(fteams=fantateams,
-		                a_round=rn,
-		                n_days=DAYS,
-		                all_players=players,
-		                captain=True,
-		                rfactor=True)
+			# sp = League(fteams=fantateams,
+		    #             a_round=rn,
+		    #             n_days=DAYS,
+		    #             all_players=players,
+		    #             captain=True,
+		    #             rfactor=True)
+			sp = League(
+					fantateams=self.fantateams,
+					schedule=a_schedule,
+					n_days=self.n_days,
+					use_rfactor=True,
+					use_captain=True
+			)
 			display(sp.create_ranking(double_check=False))
 			display(df.style.set_properties(**{'width': '50px'}))
 
@@ -694,34 +704,6 @@ def generate_points_dict(fantateams: [str], n_days: int) -> dict:
 			use_rfactor=True,
 			use_captain=True
 	)) for d in range(1, n_days + 1)] for ft in fantateams}
-
-
-def get_result(team1, team2, day):
-
-	"""
-	Return a string with the result of the match. Used inside specific_round().
-
-	:param team1: str
-	:param team2: str
-	:param day: int
-
-	:return: str
-
-	"""
-
-	abs_points1 = dbf.db_select(
-			table='absolute_points',
-			columns=[f'day_{day}'],
-			where=f'team_name="{team1}"')[0]
-	abs_points2 = dbf.db_select(
-			table='absolute_points',
-			columns=[f'day_{day}'],
-			where=f'team_name="{team2}"')[0]
-
-	goals1 = int(max(abs_points1 - 60, 0) // 6)
-	goals2 = int(max(abs_points2 - 60, 0) // 6)
-
-	return f'{goals1} - {goals2}'
 
 
 def average_global_std(
@@ -800,10 +782,10 @@ print(f'Giornate disputate: {DAYS}')
 
 teams = dbf.db_select(table='teams', columns=['team_name'], where='')
 
-# all_matches = [dbf.db_select(
-# 		table='real_league',
-# 		columns=[f'day_{i+1}'],
-# 		where='') for i in range(DAYS)]
+all_matches = [dbf.db_select(
+		table='real_league',
+		columns=[f'day_{i+1}'],
+		where='') for i in range(DAYS)]
 
 # lg = League(
 # 		fantateams=teams,
@@ -813,3 +795,5 @@ teams = dbf.db_select(table='teams', columns=['team_name'], where='')
 # 		use_captain=True
 # )
 # lg.create_ranking(double_check=True)
+# cl = Calendar(fantateams=teams, n_leagues=100, n_days=DAYS)
+# cl.specific_round(fantateam='FC 104', position=5)
