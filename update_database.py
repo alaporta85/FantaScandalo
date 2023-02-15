@@ -1,4 +1,3 @@
-import os
 import time
 import db_functions as dbf
 import config as cfg
@@ -457,22 +456,60 @@ def calculate_regular_in_out(player: str) -> (int, int, int):
 	return sum(regular), sum(going_in), sum(going_out)
 
 
+# def update_stats() -> None:
+#
+# 	"""
+# 	Update database used for market with stats.
+# 	"""
+#
+# 	names_in_stats = dbf.db_select(table='stats', columns=['name'], where='')
+#
+# 	players = open_excel_file(cfg.QUOTAZIONI_FILENAME)
+#
+# 	for row in range(players.shape[0]):
+# 		roles, name, team, price = players.iloc[row][
+# 			['RM', 'Nome', 'Squadra', 'Qt.A M']
+# 		]
+# 		name = format_player_name(player_name=name)
+# 		matches, mv = calculate_mv(name)
+# 		bonus = calculate_all_bonus(name)
+# 		malus = calculate_all_malus(name)
+# 		mfv = round(mv + (bonus - malus)/matches, 2) if matches else 0
+# 		regular, going_in, going_out = calculate_regular_in_out(name)
+#
+# 		if name in names_in_stats:
+# 			dbf.db_update(table='stats',
+# 			              columns=['name', 'team', 'roles', 'mv', 'mfv',
+# 			                       'regular', 'going_in', 'going_out',
+# 			                       'price'],
+# 			              values=[name, team, roles, mv, mfv, regular,
+# 			                      going_in, going_out, price],
+# 			              where=f'name = "{name}"')
+# 		else:
+# 			dbf.db_insert(table='stats',
+# 			              columns=['name', 'team', 'roles', 'status', 'mv',
+# 			                       'mfv', 'regular', 'going_in', 'going_out',
+# 			                       'price'],
+# 			              values=[name, team, roles, 'FREE', mv, mfv, regular,
+# 			                      going_in, going_out, price])
+#
+# 	os.remove(cfg.QUOTAZIONI_FILENAME)
+
+
 def update_stats() -> None:
 
-	"""
-	Update database used for market with stats.
-	"""
+	players_in_stats = dbf.db_select(table='stats', columns=['name'], where='')
 
-	names_in_stats = dbf.db_select(table='stats',
-	                               columns=['name'],
-	                               where='')
+	all_players = dbf.db_select(
+			table='players',
+			columns=['player_name', 'player_team',
+			         'player_roles', 'player_price', 'player_status'],
+			where='',
+			database=cfg.DB_MARKET
+	)
 
-	players = open_excel_file(cfg.QUOTAZIONI_FILENAME)
+	for name, team, roles, price, status in all_players:
 
-	for row in range(players.shape[0]):
-		roles, name, team, price = players.iloc[row][
-			['RM', 'Nome', 'Squadra', 'Qt.A M']
-		]
 		name = format_player_name(player_name=name)
 		matches, mv = calculate_mv(name)
 		bonus = calculate_all_bonus(name)
@@ -480,23 +517,23 @@ def update_stats() -> None:
 		mfv = round(mv + (bonus - malus)/matches, 2) if matches else 0
 		regular, going_in, going_out = calculate_regular_in_out(name)
 
-		if name in names_in_stats:
-			dbf.db_update(table='stats',
-			              columns=['name', 'team', 'roles', 'mv', 'mfv',
-			                       'regular', 'going_in', 'going_out',
-			                       'price'],
-			              values=[name, team, roles, mv, mfv, regular,
-			                      going_in, going_out, price],
-			              where=f'name = "{name}"')
+		if name in players_in_stats:
+			dbf.db_update(
+					table='stats',
+					columns=['name', 'team', 'roles', 'status', 'mv', 'mfv',
+					         'regular', 'going_in', 'going_out', 'price'],
+					values=[name, team, roles, status, mv, mfv,
+					        regular, going_in, going_out, price],
+					where=f'name = "{name}"'
+			)
 		else:
-			dbf.db_insert(table='stats',
-			              columns=['name', 'team', 'roles', 'status', 'mv',
-			                       'mfv', 'regular', 'going_in', 'going_out',
-			                       'price'],
-			              values=[name, team, roles, 'FREE', mv, mfv, regular,
-			                      going_in, going_out, price])
-
-	os.remove(cfg.QUOTAZIONI_FILENAME)
+			dbf.db_insert(
+					table='stats',
+					columns=['name', 'team', 'roles', 'status', 'mv', 'mfv',
+					         'regular', 'going_in', 'going_out', 'price'],
+					values=[name, team, roles, status, mv, mfv,
+					        regular, going_in, going_out, price]
+			)
 
 
 if __name__ == '__main__':
@@ -506,6 +543,4 @@ if __name__ == '__main__':
 	scrape_lineups_schemes_points(brow=browser)
 	scrape_classifica(brow=browser)
 	browser.quit()
-
-	if os.path.isfile(cfg.QUOTAZIONI_FILENAME):
-		update_stats()
+	update_stats()

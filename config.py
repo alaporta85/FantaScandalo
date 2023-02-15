@@ -1,7 +1,9 @@
 import os
 
-db_league = 'fantascandalo_db.db'
-db_market = 'fanta_asta_db.db'
+# Set paths
+MAIN_DIR = '/Users/andrea/Desktop/Cartelle/Bots'
+DB_LEAGUE = f'{MAIN_DIR}/FantaScandalo/fantascandalo_db.db'
+DB_MARKET = f'{MAIN_DIR}/FantAstaBot/fanta_asta_db.db'
 
 # update_database.py
 CHROME_PATH = os.getcwd() + '/chromedriver'
